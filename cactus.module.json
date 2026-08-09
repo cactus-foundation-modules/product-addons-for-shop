@@ -1,12 +1,18 @@
 {
   "name": "product-addons-for-shop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "tablePrefix": "pad_",
   "description": "Offer real products as add-ons (accessories) on another product's page: matched options, grouped basket lines, per-product pricing and shipping kept intact",
   "requiresCoreVersion": "0.5.988",
   "requiresModules": [
-    { "name": "shop", "minVersion": "0.1.203" },
-    { "name": "shop-variations", "minVersion": "0.1.121" }
+    {
+      "name": "shop",
+      "minVersion": "0.1.203"
+    },
+    {
+      "name": "shop-variations",
+      "minVersion": "0.1.121"
+    }
   ],
   "permissions": [],
   "settingsTabs": [
@@ -64,7 +70,9 @@
       "component": "shopProductAddonsPuckComponent",
       "rscComponent": "shopProductAddonsPuckRscComponent",
       "rscImport": "./components/puck/ShopProductAddons.rsc",
-      "layoutTypes": ["shopProductDetail"]
+      "layoutTypes": [
+        "shopProductDetail"
+      ]
     },
     {
       "type": "ShopAddonsShowcase",
@@ -72,7 +80,9 @@
       "component": "shopAddonsShowcasePuckComponent",
       "rscComponent": "shopAddonsShowcasePuckRscComponent",
       "rscImport": "./components/puck/ShopAddonsShowcase.rsc",
-      "layoutTypes": ["shopProductDetail"]
+      "layoutTypes": [
+        "shopProductDetail"
+      ]
     }
   ]
 }

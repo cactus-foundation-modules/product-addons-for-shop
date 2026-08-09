@@ -97,18 +97,26 @@ function activeContextKeys(list: ActiveAddon[]): string[] {
   return keys
 }
 
-function mainModelContext(active: ActiveAddon[]): { contexts: string[]; extraValueIds: string[] } {
+// `bundleKey`/`bundleOf` tie the group together INSIDE the modelContext bag -
+// the space planner's documented meta contract - so a saved plan can put the
+// whole set back in a basket without ever reading this module's own meta.
+// `qtyPerMain` is how many of the add-on one unit of the main line wants.
+function mainModelContext(active: ActiveAddon[], group: string): { contexts: string[]; extraValueIds: string[]; bundleKey: string } {
   const extraValueIds = active.flatMap((r) => (r.selection ? Object.values(r.selection) : []))
-  return { contexts: activeContextKeys(active), extraValueIds }
+  return { contexts: activeContextKeys(active), extraValueIds, bundleKey: group }
 }
 
-function lineModelContext(r: ActiveAddon): { stage: 'none' | 'self' } {
+function lineModelContext(r: ActiveAddon, group: string): { stage: 'none' | 'self'; bundleOf: string; qtyPerMain: number } {
   const contextActive =
     !!r.addon.modelContextKey &&
     (r.addon.config.quantity.mode === 'free' || r.recommendedPerUnit == null || r.perUnitQty === r.recommendedPerUnit)
   // Inside the combined model when its context is active; its own placeable
   // item when the owner allows it; otherwise list-only (a loose shelf).
-  return { stage: contextActive ? 'none' : r.addon.plannerStandalone ? 'self' : 'none' }
+  return {
+    stage: contextActive ? 'none' : r.addon.plannerStandalone ? 'self' : 'none',
+    bundleOf: group,
+    qtyPerMain: r.perUnitQty,
+  }
 }
 
 export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; preview?: boolean }) {
@@ -309,14 +317,14 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                 ...(r.recommendedPerUnit != null ? { recommendedPerUnit: r.recommendedPerUnit } : {}),
                 ...(r.note ? { recommendedNote: r.note } : {}),
               },
-              modelContext: lineModelContext(r),
+              modelContext: lineModelContext(r, group),
             },
           }
         })
         return {
           mainMeta: {
             [PAD_META_KEY]: { group, role: 'main' },
-            modelContext: mainModelContext(active),
+            modelContext: mainModelContext(active, group),
           },
           lines,
         }
