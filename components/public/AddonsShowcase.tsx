@@ -131,7 +131,9 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
 const CSS = `
 .pads-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:1rem}
 .pads-card{border:1px solid var(--color-border);border-radius:12px;overflow:hidden;background:var(--color-surface);display:grid;grid-template-rows:auto 1fr}
-.pads-img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+/* Square, like every other product picture on the shop - a card with its own
+   ratio reads as a different sort of thing sitting in the same page. */
+.pads-img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block}
 .pads-img-empty{background:var(--color-bg-subtle)}
 /* The card's picture opens the add-on's pictures rather than doing nothing at
    all, so it is a control and says so. */

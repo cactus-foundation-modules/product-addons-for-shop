@@ -170,13 +170,20 @@ const CSS = `
 .padgal-title{margin:0;font-size:1.0625rem;flex:1;min-width:0;overflow-wrap:anywhere}
 .padgal-count{font-size:0.8125rem;color:var(--color-text-muted);flex-shrink:0}
 .padgal-close{background:none;border:none;color:var(--color-text-muted);cursor:pointer;padding:0.25rem;display:grid;place-items:center}
-.padgal-stage{position:relative;min-height:0;background:var(--color-bg-subtle);display:grid;place-items:center;padding:0.75rem}
-.padgal-img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+/* The picture is absolutely placed and centred with auto margins rather than
+   laid out in flow: a percentage max-height on a flow child resolves against a
+   content-sized track, which is circular, so the browser drops it and the
+   picture spills out of the stage and over the thumbnail strip below. */
+.padgal-stage{position:relative;min-height:0;overflow:hidden;background:var(--color-bg-subtle)}
+.padgal-img{position:absolute;inset:0.75rem;margin:auto;width:auto;height:auto;max-width:calc(100% - 1.5rem);max-height:calc(100% - 1.5rem);object-fit:contain;display:block}
 .padgal-nav{position:absolute;top:50%;transform:translateY(-50%);width:2.25rem;height:2.25rem;border-radius:50%;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);font-size:1.5rem;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0 0 0.15rem}
 .padgal-prev{left:0.5rem}
 .padgal-next{right:0.5rem}
 .padgal-caption{margin:0;padding:0.5rem 1rem 0;font-size:0.8125rem;color:var(--color-text-muted);text-align:center}
-.padgal-thumbs{display:flex;gap:0.5rem;align-items:center;overflow-x:auto;padding:0.75rem 1rem;border-top:1px solid var(--color-border)}
+/* Safe centring: a plain centre centres a strip that overflows too, which
+   pushes the first thumbnails off the scrollable edge where nobody can reach
+   them. Safe centring falls back to start-aligned once the strip overflows. */
+.padgal-thumbs{display:flex;gap:0.5rem;align-items:center;justify-content:center;justify-content:safe center;overflow-x:auto;padding:0.75rem 1rem;border-top:1px solid var(--color-border)}
 .padgal-thumbcell{display:flex;align-items:center;gap:0.5rem;flex-shrink:0}
 .padgal-sep{width:1px;height:44px;background:var(--color-border);display:block}
 .padgal-thumb{width:64px;height:64px;border-radius:8px;border:2px solid var(--color-border);background:var(--color-surface);padding:0;overflow:hidden;cursor:pointer;flex-shrink:0}
