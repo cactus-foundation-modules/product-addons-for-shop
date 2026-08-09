@@ -27,6 +27,7 @@ const SAMPLE: PadBoxPayload = {
         productId: 'sample-1', productName: 'Matching bench screen', basePrice: 89,
         baseImages: [], options: [], variants: [], addons: [],
       },
+      plain: null,
       children: [],
     },
   ],

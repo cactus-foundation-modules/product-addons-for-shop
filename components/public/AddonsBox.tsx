@@ -16,7 +16,7 @@
 // right combined model leaves on the model-context broadcast. Both are
 // documented window events - this component and the viewer never import each
 // other.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   getVariantSelection,
   VARIANT_SELECTION_EVENT,
@@ -25,7 +25,7 @@ import {
 import { registerPurchaseCompanion } from '@/modules/shop-variations/lib/purchase-companions'
 import { resolveVariant, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart, cartLineKey, getCart, setLineMeta } from '@/modules/shop/components/public/cart'
-import type { SvrOptionWithValues, VariantSelectorPayload } from '@/modules/shop-variations/lib/types'
+import type { SvrOptionValue, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 import {
   deterministicGroupKey,
   findOptionByName,
@@ -63,7 +63,27 @@ type ResolvedAddon = {
   // when the combination is not yet complete or not available.
   selection: OptionSelection | null
   // Which options the shopper is shown (choose + default + recommend modes).
-  shown: Array<{ option: SvrOptionWithValues; mode: 'choose' | 'default' | 'recommend'; valueId: string | null; locked: string | null }>
+  // `followed` is the value this option would take on its own (the main
+  // selection's translation for a default, the shop's pick for a recommend);
+  // `overridden` says the shopper has moved off it - and goes false again the
+  // moment they land back on it, so the provenance note returns and the
+  // put-it-back button leaves.
+  shown: Array<{
+    option: SvrOptionWithValues
+    mode: 'choose' | 'default' | 'recommend'
+    valueId: string | null
+    locked: string | null
+    // The value behind a locked line, so a colour or picture option can show
+    // the swatch it settled on rather than only naming it.
+    lockedValue: SvrOptionValue | null
+    followed: string | null
+    overridden: boolean
+  }>
+  // Names of the main product's options this add-on follows that have not been
+  // chosen yet. While any are outstanding the add-on's own choices are held
+  // shut: picking a colour to go with a desk nobody has configured yet only
+  // gets quietly overwritten later.
+  blockedBy: string[]
   // Whether the mapping machinery could place every match-mode option (false =
   // unavailable for the current main configuration).
   available: boolean
@@ -76,6 +96,73 @@ type ResolvedAddon = {
 }
 
 const money = (symbol: string, n: number) => `${symbol}${n.toFixed(2)}`
+
+// The fields a variation carries that an option-less add-on has no answer for.
+// The server's `plain` block supplies the rest (id of the product being bought,
+// its price, its stock, its picture), and the two together let one add path
+// serve both kinds of add-on.
+const PLAIN_VARIANT_SHELL: Omit<VariantSelectorVariant, 'childProductId' | 'price' | 'inStock' | 'imageUrls'> = {
+  id: 'plain',
+  optionValueIds: [],
+  aliasValueIds: [],
+  enabled: true,
+  compareAtPrice: null,
+  stockCount: null,
+  sku: null,
+  supplier: null,
+}
+
+// "Frame Colour", "Frame Colour and Size", "Frame Colour, Size and Depth" - a
+// sentence a shopper reads, not a comma-separated list.
+function listPhrase(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? 'options'
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+// A swatch picture fetched in CORS mode, for the same reason the main product's
+// swatches are: on a product with a 3D view the viewer paints this very picture
+// onto the model, and WebGL only accepts a cross-origin image fetched WITH
+// CORS. Asking for it the same way here makes the two one download. A host that
+// answers without the header gets a plain retry rather than a broken picture -
+// and the element is remounted rather than edited, because the attribute only
+// counts if it is set before the load starts.
+function PadSwatchImg({ src, className }: { src: string; className?: string }) {
+  const [refused, setRefused] = useState<string | null>(null)
+  const cors = refused !== src
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
+    <img
+      key={cors ? 'cors' : 'plain'}
+      crossOrigin={cors ? 'anonymous' : undefined}
+      src={src}
+      onError={() => setRefused(src)}
+      alt=""
+      aria-hidden
+      loading="lazy"
+      className={className}
+    />
+  )
+}
+
+// The hover chip the main product's colour choices carry, in the box's own
+// markup: a bordered card above the swatch with a proper look at the value (the
+// full picture, or a block of colour big enough to judge) and its name beneath.
+// The name also rides the button's `title` and `aria-label`, so it is never
+// hover-only for a keyboard or screen reader shopper.
+function PadPeek({ label, preview, children }: { label: string; preview: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="pad-peek" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      {children}
+      {open && (
+        <span role="tooltip" className="pad-chip">
+          {preview}
+          <span>{label}</span>
+        </span>
+      )}
+    </span>
+  )
+}
 
 function fromPrice(selector: VariantSelectorPayload): number {
   if (selector.variants.length === 0) return selector.basePrice
@@ -190,11 +277,21 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
 
     const selection: OptionSelection = {}
     const shown: ResolvedAddon['shown'] = []
+    const blockedBy: string[] = []
     let available = resolved !== null
     let unavailableReason: string | null = resolved === null ? 'Not available at the moment' : null
 
     if (resolved) {
       const mapped = new Map(resolved.map((r) => [r.addonOption.id, r]))
+      // Every main option this add-on takes a lead from that is still unchosen.
+      // Both following modes count: a match has nothing to lock to, and a
+      // default has nothing to default TO - a pick made now would be silently
+      // replaced the moment the main option is settled.
+      for (const r of resolved) {
+        if (r.mapping.mode !== 'match' && r.mapping.mode !== 'default') continue
+        if (!r.mainOption || parentSelection[r.mainOption.id]) continue
+        if (!blockedBy.includes(r.mainOption.name)) blockedBy.push(r.mainOption.name)
+      }
       for (const option of addon.selector.options) {
         const r = mapped.get(option.id)
         const mode = r?.mapping.mode
@@ -215,27 +312,49 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
           // admin's pick (recommend). A recommend whose picked value has
           // vanished follows nothing and reads as a plain choice.
           const followed = r?.value?.id ?? null
-          const chosen = state.overridden[option.id] ? state.chosen[option.id] ?? null : followed
+          // Landing back on the followed value is not an override, however the
+          // shopper got there: the option starts following again, so a main
+          // change still carries it and the note reads plainly.
+          const overridden = !!state.overridden[option.id] && (state.chosen[option.id] ?? null) !== followed
+          const chosen = overridden ? state.chosen[option.id] ?? null : followed
           if (chosen) selection[option.id] = chosen
-          shown.push({ option, mode, valueId: chosen, locked: null })
+          shown.push({ option, mode, valueId: chosen, locked: null, lockedValue: null, followed, overridden })
           continue
         }
         // choose (explicit or unmapped): the shopper's pick.
         const chosen = state.chosen[option.id] ?? null
         if (chosen) selection[option.id] = chosen
-        shown.push({ option, mode: 'choose', valueId: chosen, locked: null })
+        shown.push({ option, mode: 'choose', valueId: chosen, locked: null, lockedValue: null, followed: null, overridden: false })
       }
-      // Matched options the shopper should still SEE (locked wording), listed
-      // after resolution so width reads "matches your desk".
+      // Options the shopper does not choose but should still SEE, listed after
+      // resolution so a matched width reads "matches your desk". A fixed value
+      // is stated plainly - it comes one way, and an add-on that quietly ships
+      // in a colour nobody was told about is worse than one extra line.
       for (const r of resolved) {
-        if (r.mapping.mode === 'match' && r.value) {
-          shown.unshift({ option: r.addonOption, mode: 'choose', valueId: null, locked: `${r.value.label} - matches your ${r.mainOption?.name.toLowerCase() ?? 'choice'}` })
+        if (!r.value) continue
+        if (r.mapping.mode === 'match') {
+          shown.unshift({
+            option: r.addonOption, mode: 'choose', valueId: null, followed: null, overridden: false,
+            lockedValue: r.value,
+            locked: `${r.value.label} - matches your ${r.mainOption?.name.toLowerCase() ?? 'choice'}`,
+          })
+        } else if (r.mapping.mode === 'fixed') {
+          shown.unshift({
+            option: r.addonOption, mode: 'choose', valueId: null, followed: null, overridden: false,
+            lockedValue: r.value,
+            locked: r.value.label,
+          })
         }
       }
     }
 
     const complete = addon.selector.options.every((o) => selection[o.id])
-    const variant = complete ? resolveVariant(addon.selector, selection) : null
+    // An add-on with no options at all is bought as the listing itself: the
+    // selection maths has nothing to resolve on such a product and correctly
+    // returns nothing, which the box must not read as "unavailable".
+    const variant = addon.plain
+      ? { ...PLAIN_VARIANT_SHELL, ...addon.plain }
+      : complete ? resolveVariant(addon.selector, selection) : null
     const recommendedPerUnit = recommendedQuantityPerUnit(addon.config.quantity, parentOptions, parentSelection)
     const perUnitQty = state.qty ?? recommendedPerUnit ?? 1
     const note = recommendationNote(addon.config.quantity, addon.name, parentOptions, parentSelection)
@@ -245,6 +364,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       state,
       selection: complete ? selection : null,
       shown,
+      blockedBy,
       available,
       unavailableReason: available ? null : unavailableReason,
       variant,
@@ -372,59 +492,98 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     setStates((prev) => ({ ...prev, [linkId]: { ...stateFor(linkId), ...patch } }))
   }
 
-  function renderOptionPicker(r: ResolvedAddon, entry: ResolvedAddon['shown'][number]) {
+  function renderOptionPicker(r: ResolvedAddon, entry: ResolvedAddon['shown'][number], blocked: boolean) {
     const { option, mode, valueId } = entry
     if (entry.locked) {
+      // A colour or picture option shows the swatch it settled on, with the same
+      // hover look the pickable ones have. It is not a button - there is nothing
+      // to pick - but a shopper should still be able to see the colour they are
+      // about to buy rather than only read its name.
+      const lockedSwatch = entry.lockedValue
+        && (option.controlType === 'SWATCH' || option.controlType === 'IMAGE')
+        ? entry.lockedValue.swatchSmall || entry.lockedValue.swatch
+        : null
+      const lockedIsImage = !!lockedSwatch && !lockedSwatch.startsWith('#')
       return (
         <div key={option.id} className="pad-locked">
+          {lockedSwatch && (
+            <PadPeek
+              label={entry.lockedValue!.label}
+              preview={lockedIsImage
+                ? <PadSwatchImg src={lockedSwatch} className="pad-peekimg" />
+                : <span aria-hidden className="pad-peekcolour" style={{ background: lockedSwatch }} />}
+            >
+              <span
+                className="pad-swatch pad-swatch-static"
+                style={lockedIsImage ? undefined : { background: lockedSwatch }}
+              >
+                {lockedIsImage && <PadSwatchImg src={lockedSwatch} />}
+              </span>
+            </PadPeek>
+          )}
           <span className="pad-optname">{option.name}:</span> {entry.locked}
         </div>
       )
     }
     const isSwatch = option.controlType === 'SWATCH' || option.controlType === 'IMAGE'
-    // The little provenance note beside the option name: a default follows the
-    // shopper's own main choice, a recommend follows the shop's suggestion -
-    // only while un-overridden, and only while there is a value to follow.
-    const followedNote = !r.state.overridden[option.id] && valueId != null
-      ? mode === 'default' ? ' - matching your choice' : mode === 'recommend' ? ' - recommended' : null
+    // The name carries the pick, exactly as the main product's own options do:
+    // "Frame Colour - White". A followed value adds where it came from - the
+    // shopper's main choice, or the shop's recommendation - and loses it the
+    // moment they move off, so the note never claims something that is no
+    // longer true.
+    const selectedLabel = valueId ? option.values.find((v) => v.id === valueId)?.label ?? null : null
+    const provenance = !entry.overridden && entry.followed != null && valueId === entry.followed
+      ? mode === 'default' ? 'matching your choice' : mode === 'recommend' ? 'recommended' : null
       : null
     return (
       <div key={option.id} className="pad-opt">
         <span className="pad-optname">
           {option.name}
-          {followedNote && <em className="pad-follows">{followedNote}</em>}
+          {selectedLabel && (
+            <em className="pad-follows"> - {selectedLabel}{provenance ? ` (${provenance})` : ''}</em>
+          )}
         </span>
-        <div className={isSwatch ? 'pad-swatches' : 'pad-pills'}>
+        <div className={`pad-choices ${isSwatch ? 'pad-swatches' : 'pad-pills'}`}>
           {option.values.map((value) => {
             const selected = valueId === value.id
             const pick = () =>
               setState(r.addon.linkId, {
                 chosen: { ...r.state.chosen, [option.id]: value.id },
+                // Picking the followed value back is a return to following, not
+                // another override: the note comes back and the put-it-back
+                // button goes away.
                 overridden: mode === 'default' || mode === 'recommend'
-                  ? { ...r.state.overridden, [option.id]: true }
+                  ? { ...r.state.overridden, [option.id]: value.id !== entry.followed }
                   : r.state.overridden,
               })
             if (isSwatch) {
               const swatchUrl = value.swatchSmall || value.swatch
               const isImage = !!swatchUrl && !swatchUrl.startsWith('#')
               return (
-                <button
-                  key={value.id} type="button" title={value.label} aria-label={`${option.name}: ${value.label}`}
-                  aria-pressed={selected} disabled={preview}
-                  className={`pad-swatch${selected ? ' pad-on' : ''}`}
-                  onClick={pick}
-                  style={isImage ? undefined : { background: swatchUrl || 'var(--color-bg-subtle)' }}
+                // Same hover affordance the main product's colour choices have:
+                // a chip above the swatch with a proper look at the picture (or
+                // a usable block of the colour) and the value's name under it.
+                <PadPeek
+                  key={value.id} label={value.label}
+                  preview={isImage
+                    ? <PadSwatchImg src={swatchUrl!} className="pad-peekimg" />
+                    : swatchUrl ? <span aria-hidden className="pad-peekcolour" style={{ background: swatchUrl }} /> : null}
                 >
-                  {isImage && (
-                    // eslint-disable-next-line @next/next/no-img-element -- swatch is an absolute media URL
-                    <img src={swatchUrl!} alt="" loading="lazy" />
-                  )}
-                </button>
+                  <button
+                    type="button" title={value.label} aria-label={`${option.name}: ${value.label}`}
+                    aria-pressed={selected} disabled={preview || blocked}
+                    className={`pad-swatch${selected ? ' pad-on' : ''}`}
+                    onClick={pick}
+                    style={isImage ? undefined : { background: swatchUrl || 'var(--color-bg-subtle)' }}
+                  >
+                    {isImage && <PadSwatchImg src={swatchUrl!} />}
+                  </button>
+                </PadPeek>
               )
             }
             return (
               <button
-                key={value.id} type="button" aria-pressed={selected} disabled={preview}
+                key={value.id} type="button" aria-pressed={selected} disabled={preview || blocked}
                 className={`pad-pill${selected ? ' pad-on' : ''}`} onClick={pick}
               >
                 {value.label}
@@ -432,9 +591,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             )
           })}
         </div>
-        {(mode === 'default' || mode === 'recommend') && r.state.overridden[option.id] && (
+        {(mode === 'default' || mode === 'recommend') && entry.overridden && (
           <button
-            type="button" className="pad-reset" disabled={preview}
+            type="button" className="pad-reset" disabled={preview || blocked}
             onClick={() => setState(r.addon.linkId, { overridden: { ...r.state.overridden, [option.id]: false } })}
           >
             {mode === 'default' ? 'Match my choice again' : 'Back to the recommendation'}
@@ -446,6 +605,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
 
   function renderAddonRow(r: ResolvedAddon & { depth: number; parent: ResolvedAddon | null }, index: number) {
     const { addon, state } = r
+    const blocked = r.blockedBy.length > 0
     const price = r.variant ? r.variant.price * r.perUnitQty : null
     const from = fromPrice(addon.selector)
     const qtyOverridden = r.recommendedPerUnit != null && state.qty != null && state.qty !== r.recommendedPerUnit
@@ -487,7 +647,13 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         )}
         {state.enabled && r.available && (
           <div className="pad-body">
-            {r.shown.map((entry) => renderOptionPicker(r, entry))}
+            {/* Nothing here can be settled until the main product's own choices
+                are: the pickers stay visible so the shopper can see what is
+                coming, but they are held shut until then. */}
+            {blocked && (
+              <p className="pad-hint">Choose your {listPhrase(r.blockedBy)} above first.</p>
+            )}
+            {r.shown.map((entry) => renderOptionPicker(r, entry, blocked))}
             <div className="pad-qty">
               <span className="pad-optname">Quantity</span>
               {/* Quantity input + the add-on's own add button, deliberately the
@@ -496,7 +662,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
               <div className="pad-buyrow">
                 <input
                   type="number" min={1} value={r.perUnitQty} aria-label={`Quantity of ${addon.name}`}
-                  className="pad-qtyinput" disabled={preview}
+                  className="pad-qtyinput" disabled={preview || blocked}
                   onChange={(e) => setState(addon.linkId, { qty: Math.max(1, Number(e.target.value) || 1) })}
                 />
                 <button
@@ -512,7 +678,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                 <p className="pad-note">3D preview shows the standard arrangement.</p>
               )}
             </div>
-            {!r.variant && r.selection == null && (
+            {!blocked && !r.variant && r.selection == null && (
               <p className="pad-hint">
                 {mainSelection?.allOptionsChosen === false && r.shown.length === 0
                   ? 'Choose your options above first.'
@@ -558,18 +724,37 @@ const PAD_BOX_CSS = `
 .pad-learn:hover{background:var(--color-bg-subtle)}
 .pad-row:first-of-type .pad-learn{top:-0.3rem}
 .pad-body{display:grid;gap:0.625rem;padding-left:1.7rem}
-.pad-opt,.pad-qty{display:grid;gap:0.3rem}
+.pad-qty{display:grid;gap:0.3rem}
+/* The choices sit AFTER the option's name, wrapping around it, exactly as the
+   main product's options do. The name is floated rather than a flex item: a
+   float only shortens the line boxes beside it, so the first row of choices
+   clears the name and every row after it runs the full width. That also means
+   the choices cannot be a flex container (a block formatting context is pushed
+   aside by a float whole), so they stay inline and space themselves with
+   margins. Containment is flow-root, never overflow:hidden - the swatch's hover
+   chip escapes its button and hidden would slice it off. */
+.pad-opt{display:flow-root}
 .pad-optname{font-size:0.8125rem;font-weight:500}
+.pad-opt>.pad-optname{float:left;margin-right:0.5rem;padding-top:0.35rem}
+.pad-choices{margin-bottom:-0.375rem}
 .pad-follows{font-style:normal;font-weight:400;color:var(--color-text-muted)}
-.pad-locked{font-size:0.8125rem;color:var(--color-text-muted)}
-.pad-swatches{display:flex;flex-wrap:wrap;gap:0.375rem}
+.pad-locked{font-size:0.8125rem;color:var(--color-text-muted);display:flex;align-items:center;gap:0.375rem;flex-wrap:wrap}
+.pad-locked .pad-peek{margin:0}
+/* Sized against the locked line's own text rather than the pickable rows: it is
+   a statement of what arrives, not a target to hit. */
+.pad-swatch-static{display:inline-block;cursor:default;width:22px;height:22px;border-width:1px}
+.pad-peek{position:relative;display:inline-flex;vertical-align:top;margin:0 0.375rem 0.375rem 0}
+.pad-chip{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:20;white-space:nowrap;pointer-events:none;display:grid;justify-items:center;gap:4px;background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-border);border-radius:8px;box-shadow:var(--shadow-lg);padding:4px 6px 3px;font-size:0.75rem;line-height:1.3}
+.pad-peekimg{width:200px;height:200px;object-fit:contain;display:block;border-radius:4px}
+.pad-peekcolour{width:160px;height:90px;display:block;border-radius:4px;border:1px solid var(--color-border)}
 .pad-swatch{width:30px;height:30px;border-radius:50%;border:2px solid var(--color-border);padding:0;cursor:pointer;overflow:hidden;flex-shrink:0}
 .pad-swatch img{width:100%;height:100%;object-fit:cover;display:block}
 .pad-swatch.pad-on{border-color:var(--color-primary);box-shadow:0 0 0 2px var(--color-surface),0 0 0 4px var(--color-primary)}
-.pad-pills{display:flex;flex-wrap:wrap;gap:0.375rem}
-.pad-pill{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:999px;padding:0.25rem 0.75rem;font-size:0.8125rem;cursor:pointer}
+.pad-swatch:disabled{cursor:not-allowed;opacity:0.55}
+.pad-pill{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:999px;padding:0.25rem 0.75rem;font-size:0.8125rem;cursor:pointer;vertical-align:top;margin:0 0.375rem 0.375rem 0}
 .pad-pill.pad-on{border-color:var(--color-primary);color:var(--color-primary);font-weight:600}
-.pad-reset{justify-self:start;background:none;border:none;color:var(--color-primary);cursor:pointer;font-size:0.75rem;padding:0}
+.pad-pill:disabled{cursor:not-allowed;color:var(--color-text-muted)}
+.pad-reset{clear:left;display:block;justify-self:start;background:none;border:none;color:var(--color-primary);cursor:pointer;font-size:0.75rem;padding:0.25rem 0 0}
 .pad-buyrow{display:flex;gap:0.75rem;align-items:center}
 /* Mirrors shop-variations' add-to-cart part: the same 64px numeric quantity
    field and the same primary-filled button, so an add-on's purchase row reads

@@ -101,6 +101,13 @@ export type PadAddonPayload = {
   // variant price matrix, personalisation fields - exactly what its own page
   // uses, so the box resolves combinations and prices with the same maths.
   selector: VariantSelectorPayload
+  // The listing itself as the thing bought, for an add-on with no options at
+  // all - a cable tray that comes one way. There is no combination to resolve
+  // on such a product (the selector has no options and no variations, so the
+  // selection maths correctly resolves nothing), and without this the box could
+  // only ever say the combination was unavailable. Null whenever the add-on has
+  // options, where a variation is what gets bought.
+  plain: { childProductId: string; price: number; inStock: boolean; imageUrls: string[] } | null
   // Nested add-ons of this add-on (an accessory's own accessories), one level
   // per hop. Cycle-guarded at link save AND at read (belt and braces), so a
   // malicious row cannot hang the page.

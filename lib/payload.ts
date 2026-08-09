@@ -1,6 +1,8 @@
 import { getProductsByIds } from '@/modules/shop/lib/db/products'
 import { getPrimaryProductImages } from '@/modules/shop/lib/db/products'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
+import { effectivePrice } from '@/modules/shop/lib/pricing'
+import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getVariantSelectorPayload } from '@/modules/shop-variations/lib/variants-service'
 import { getLinksForProduct } from '@/modules/product-addons-for-shop/lib/db/links'
@@ -45,6 +47,27 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
   ).filter((c): c is PadAddonPayload => c !== null)
 
   const images = await getPrimaryProductImages([link.addonProductId])
+  // An add-on that comes exactly one way has nothing to resolve: no options, no
+  // variations. The listing itself is what goes in the basket, priced and
+  // stocked from its own row - the same figures its own page prints, tax
+  // display and sale price included.
+  let plain: PadAddonPayload['plain'] = null
+  if (selector.options.length === 0) {
+    const [taxDisplay, shopConfig] = await Promise.all([resolveTaxDisplay(), getShopConfigCached()])
+    const adjust = makeDisplayAdjuster(taxDisplay, product.taxClassId)
+    const price = effectivePrice(product, shopConfig.enabledPriceTypes)
+    plain = {
+      childProductId: link.addonProductId,
+      price: adjust ? adjust(price) : price,
+      // Same rule the variant path uses: an untracked line is always buyable,
+      // and backorder or pre-order sells past zero deliberately.
+      inStock: !product.trackInventory
+        || (product.stockCount ?? 0) > 0
+        || product.outOfStockBehaviour === 'BACKORDER'
+        || product.isPreOrder,
+      imageUrls: images[link.addonProductId] ? [images[link.addonProductId]!] : [],
+    }
+  }
   return {
     linkId: link.id,
     addonProductId: link.addonProductId,
@@ -56,6 +79,7 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
     plannerStandalone: link.plannerStandalone,
     config: link.config,
     selector,
+    plain,
     children,
   }
 }
