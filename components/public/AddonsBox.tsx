@@ -232,34 +232,87 @@ function fromPrice(selector: VariantSelectorPayload): number {
 // value in play so the viewer can paint companion materials.
 type ActiveAddon = ResolvedAddon & { depth: number }
 
+/**
+ * The context key one add-on contributes right now, or null for none.
+ *
+ * Recommended-mode with an overridden quantity contributes nothing - the
+ * preview shows the standard arrangement or none, never a guess.
+ */
+function addonContextKey(r: ResolvedAddon): string | null {
+  if (!r.state.enabled || !r.variant || !r.available || !r.addon.modelContextKey) return null
+  if (r.addon.config.quantity.mode === 'free') return `${r.addon.modelContextKey}:${r.perUnitQty}`
+  if (r.recommendedPerUnit == null || r.perUnitQty === r.recommendedPerUnit) return r.addon.modelContextKey
+  return null
+}
+
 function activeContextKeys(list: ActiveAddon[]): string[] {
   const keys: string[] = []
   for (const r of list) {
-    if (!r.state.enabled || !r.variant || !r.available || !r.addon.modelContextKey) continue
-    if (r.addon.config.quantity.mode === 'free') {
-      keys.push(`${r.addon.modelContextKey}:${r.perUnitQty}`)
-    } else if (r.recommendedPerUnit == null || r.perUnitQty === r.recommendedPerUnit) {
-      keys.push(r.addon.modelContextKey)
-    }
-    // Recommended-mode overridden quantity: the key stays out - the preview
-    // shows the standard arrangement or none, never a guess.
+    const key = addonContextKey(r)
+    if (key) keys.push(key)
   }
   return keys
 }
 
-// `bundleOf` ties an add-on line to its group INSIDE the modelContext bag -
-// the space planner's documented meta contract - so a saved plan can keep the
-// set together without ever reading this module's own meta. Since an add-on is
-// bought by its own button (the main line no longer carries a combined-model
-// context - which add-ons it will end up with is unknowable at its add), every
-// line stages for itself: its own placeable item when the owner allows it,
-// list-only otherwise (a loose shelf).
-function lineModelContext(r: ResolvedAddon, group: string, qty: number): { stage: 'none' | 'self'; bundleOf: string; qtyPerMain: number } {
+// `bundleOf` ties an add-on line to its group INSIDE the modelContext bag - the
+// space planner's documented meta contract - so a saved plan can keep the set
+// together without ever reading this module's own meta.
+//
+// `contextKey`/`valueIds` are this line's OWN contribution to the group's
+// combined model, and they live on the add-on line rather than only on the
+// main one deliberately: an add-on is bought by its own button, in any order,
+// and the shopper can take one back out from the basket page long after this
+// component has gone. The truth about which screens a desk was bought with is
+// therefore the set of add-on lines actually sitting in the basket, and this is
+// where each of them states its piece of it. The main line still carries the
+// merged bag (see mainModelContext) so a consumer that reads only the main line
+// gets an answer, but it is a summary, not the source.
+//
+// An add-on contributing a context is already inside the combined model, so it
+// stages nothing of its own - otherwise the same screens both ride on the desk
+// and lean against the wall as loose panels.
+function lineModelContext(
+  r: ResolvedAddon,
+  group: string,
+  qty: number,
+): { stage: 'none' | 'self'; bundleOf: string; qtyPerMain: number; contextKey?: string; valueIds?: string[] } {
+  const contextKey = addonContextKey(r)
   return {
-    stage: r.addon.plannerStandalone ? 'self' : 'none',
+    stage: contextKey ? 'none' : r.addon.plannerStandalone ? 'self' : 'none',
     bundleOf: group,
     qtyPerMain: qty,
+    ...(contextKey ? { contextKey, valueIds: r.selection ? Object.values(r.selection) : [] } : {}),
   }
+}
+
+/**
+ * The group's combined-model bag, read back off the basket.
+ *
+ * Derived from the add-on lines present RIGHT NOW rather than from this
+ * component's tick state: the shopper may have bought one add-on before a page
+ * reload and another after it, and only the basket knows about both.
+ */
+function mainModelContext(group: string): {
+  contexts: string[]
+  extraValueIds: string[]
+  bundleKey: string
+  contextsFrom: 'bundle'
+} {
+  const contexts: string[] = []
+  const extraValueIds: string[] = []
+  for (const line of getCart()) {
+    const bag = line.meta?.modelContext
+    if (!bag || typeof bag !== 'object') continue
+    const read = bag as { bundleOf?: unknown; contextKey?: unknown; valueIds?: unknown }
+    if (read.bundleOf !== group) continue
+    if (typeof read.contextKey === 'string' && read.contextKey) contexts.push(read.contextKey)
+    if (Array.isArray(read.valueIds)) extraValueIds.push(...read.valueIds.filter((v): v is string => typeof v === 'string'))
+  }
+  // `contextsFrom: 'bundle'` tells a reader these contexts were derived from the
+  // group's own lines and can be re-derived the same way - which is what lets a
+  // consumer notice that the shopper has since taken the screens back out of the
+  // basket, where a bare stored list would go on claiming them forever.
+  return { contexts, extraValueIds, bundleKey: group, contextsFrom: 'bundle' }
 }
 
 // Every picture worth showing for one add-on, in the order a shopper should
@@ -514,7 +567,14 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         })
         // Nothing of this group in the basket: stay out of the add entirely, so
         // a product bought without accessories keeps its plain, mergeable line.
-        return related ? { mainMeta: { [PAD_META_KEY]: { group, role: 'main' } }, lines: [] } : null
+        //
+        // The other buying order - accessories first, main product after - and
+        // the combined-model bag has to be stamped here too, or a desk bought
+        // last arrives in the space planner without the screens already sitting
+        // in the basket waiting for it.
+        return related
+          ? { mainMeta: { [PAD_META_KEY]: { group, role: 'main' }, modelContext: mainModelContext(group) }, lines: [] }
+          : null
       },
     })
   }, [preview, mainSelection?.slug, payload.productId])
@@ -551,10 +611,28 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       },
     })
     // A main line already in the basket joins the group now, so the nesting
-    // works in this buying order too. Only an unstamped line is touched - never
-    // another module's meta, never an already-stamped group.
-    const mainLine = getCart().find((line) => line.productId === mainTargetId && !(line.meta?.[PAD_META_KEY]))
-    if (mainLine) setLineMeta(cartLineKey(mainLine), { [PAD_META_KEY]: { group, role: 'main' } })
+    // works in this buying order too, and its combined-model bag is refreshed
+    // to match what the group now holds. The group's own main line is preferred
+    // over an unstamped candidate: from the second add-on on, the main line is
+    // already stamped, and the old lookup simply found nothing and left the
+    // model context a version behind.
+    //
+    // One write, not two: setLineMeta gives a plain line a lineId on its first
+    // meta, which changes the very key a second call would have to target.
+    const cart = getCart()
+    const stampedMain = cart.find((line) => {
+      const bag = line.meta?.[PAD_META_KEY]
+      if (!bag || typeof bag !== 'object') return false
+      const read = bag as { group?: unknown; role?: unknown }
+      return read.group === group && read.role === 'main'
+    })
+    const mainLine = stampedMain ?? cart.find((line) => line.productId === mainTargetId && !line.meta?.[PAD_META_KEY])
+    if (mainLine) {
+      setLineMeta(cartLineKey(mainLine), {
+        ...(stampedMain ? {} : { [PAD_META_KEY]: { group, role: 'main' } }),
+        modelContext: mainModelContext(group),
+      })
+    }
     setState(r.addon.linkId, { added: true })
     window.setTimeout(() => setState(r.addon.linkId, { added: false }), 2000)
   }
