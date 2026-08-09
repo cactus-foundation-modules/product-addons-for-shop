@@ -70,6 +70,35 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
     await reload()
   }
 
+  // Swap an add-on with its neighbour and persist the whole new order. Two
+  // deliberate choices: the swap shows at once (a list that only moves after a
+  // round trip feels broken), and there is NO reload afterwards - a reload
+  // hands every LinkEditor a fresh `link` object, which resets its unsaved
+  // drafts, and reordering must not cost somebody the rules they were half way
+  // through writing. React keeps each editor's state across the move because
+  // the rows are keyed by link id. Only a refusal reloads, to show the truth.
+  async function moveLink(linkId: string, direction: -1 | 1) {
+    if (!payload) return
+    const index = payload.links.findIndex((v) => v.link.id === linkId)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= payload.links.length) return
+    const reordered = [...payload.links]
+    const moved = reordered[index]!
+    reordered[index] = reordered[target]!
+    reordered[target] = moved
+    setPayload({ ...payload, links: reordered })
+    setError(null)
+    const res = await fetch(`${API}/products/${productId}/links/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderedIds: reordered.map((v) => v.link.id) }),
+    })
+    if (!res.ok) {
+      setError((await res.json()).error ?? 'Could not save the new order')
+      await reload()
+    }
+  }
+
   async function removeLink(linkId: string) {
     await fetch(`${API}/links/${linkId}`, { method: 'DELETE' })
     await reload()
@@ -81,17 +110,21 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
     <div style={{ display: 'grid', gap: '1rem' }}>
       <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
         Products offered alongside this one, bought together as one grouped basket. Each add-on
-        keeps its own price, stock and delivery rules.
+        keeps its own price, stock and delivery rules. Shoppers meet them in the order below, on
+        the product page and in the showcase alike - the arrows change it.
       </p>
 
       {error && <p style={{ margin: 0, color: 'var(--color-danger)', fontSize: '0.8125rem' }}>{error}</p>}
 
-      {payload.links.map((view) => (
+      {payload.links.map((view, index) => (
         <LinkEditor
           key={view.link.id}
           view={view}
+          index={index}
+          count={payload.links.length}
           mainOptions={payload.mainOptions}
           onPatch={(body) => patchLink(view.link.id, body)}
+          onMove={(direction) => moveLink(view.link.id, direction)}
           onRemove={() => removeLink(view.link.id)}
         />
       ))}
@@ -118,10 +151,13 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
   )
 }
 
-function LinkEditor({ view, mainOptions, onPatch, onRemove }: {
+function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove }: {
   view: AdminSectionPayload['links'][number]
+  index: number
+  count: number
   mainOptions: AdminOption[]
   onPatch: (body: Record<string, unknown>) => Promise<void>
+  onMove: (direction: -1 | 1) => Promise<void>
   onRemove: () => Promise<void>
 }) {
   const { link } = view
@@ -169,7 +205,27 @@ function LinkEditor({ view, mainOptions, onPatch, onRemove }: {
           <input type="checkbox" checked={link.enabled} onChange={(e) => onPatch({ enabled: e.target.checked })} />
           Offered on the product page
         </label>
-        <button type="button" style={{ ...btn, marginLeft: 'auto', color: 'var(--color-danger)' }} onClick={onRemove}>Remove</button>
+        {/* Order controls, in the same shape shop's own category list uses:
+            plain arrows, disabled and faded at the ends, each naming the add-on
+            it moves so a screen reader is not left with a row of arrows. */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+          <span style={{ ...label, marginRight: '0.125rem' }}>{index + 1} of {count}</span>
+          <button
+            type="button" style={{ ...btn, padding: '0.375rem 0.5rem', opacity: index <= 0 ? 0.35 : 1 }}
+            disabled={index <= 0} title="Move up" aria-label={`Move ${view.addonName} up`}
+            onClick={() => onMove(-1)}
+          >
+            ↑
+          </button>
+          <button
+            type="button" style={{ ...btn, padding: '0.375rem 0.5rem', opacity: index >= count - 1 ? 0.35 : 1 }}
+            disabled={index >= count - 1} title="Move down" aria-label={`Move ${view.addonName} down`}
+            onClick={() => onMove(1)}
+          >
+            ↓
+          </button>
+          <button type="button" style={{ ...btn, color: 'var(--color-danger)' }} onClick={onRemove}>Remove</button>
+        </div>
       </div>
 
       {view.warnings.length > 0 && (

@@ -23,7 +23,12 @@ import {
   type VariantSelectionDetail,
 } from '@/modules/shop-variations/lib/selection-broadcast'
 import { registerPurchaseCompanion } from '@/modules/shop-variations/lib/purchase-companions'
-import { resolveVariant, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import {
+  resolveVariant,
+  valueToOptionMap,
+  variantAnswersTo,
+  type OptionSelection,
+} from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart, cartLineKey, getCart, setLineMeta } from '@/modules/shop/components/public/cart'
 import type { SvrOptionValue, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 import {
@@ -34,8 +39,14 @@ import {
   resolveMappings,
 } from '@/modules/product-addons-for-shop/lib/mapping'
 import { publishModelContext } from '@/modules/product-addons-for-shop/lib/model-context'
+import { publishAddonImages } from '@/modules/product-addons-for-shop/lib/addon-images'
 import { ADDON_FOCUS_EVENT, type AddonFocusDetail } from '@/modules/product-addons-for-shop/lib/accessory-focus'
 import { LearnMoreModal } from '@/modules/product-addons-for-shop/components/public/LearnMoreModal'
+import {
+  AddonImageModal,
+  dedupeGalleryImages,
+  type PadGalleryImage,
+} from '@/modules/product-addons-for-shop/components/public/AddonImageModal'
 import { PAD_META_KEY, type PadAddonPayload, type PadBoxPayload } from '@/modules/product-addons-for-shop/lib/types'
 
 // Per-addon UI state, keyed by linkId (chain rows included - link ids are
@@ -90,6 +101,12 @@ type ResolvedAddon = {
   // Why not, when not (shopper wording).
   unavailableReason: string | null
   variant: ReturnType<typeof resolveVariant>
+  // The pictures to show for this add-on right now, in gallery order. The
+  // resolved variation's own once the combination is complete, and BEFORE that
+  // the first variation agreeing with whatever is already settled - see
+  // settledVariantImages. Empty means there is nothing better than the
+  // listing's own picture.
+  displayImages: string[]
   perUnitQty: number
   recommendedPerUnit: number | null
   note: string | null
@@ -164,6 +181,33 @@ function PadPeek({ label, preview, children }: { label: string; preview: ReactNo
   )
 }
 
+// The variation whose pictures should stand in while the combination is still
+// incomplete: the first enabled one that carries pictures and agrees with every
+// value settled so far, however it was settled - the shopper's own pick, a
+// value matched off the main product, or one the shop pinned.
+//
+// This matters most in the case it was written for: an add-on whose colour is
+// locked to the desk's and whose fabric is still to choose. Nothing resolves to
+// a variation yet, so the row used to fall back to the listing's own
+// photograph - which is very often a different finish entirely, and a picture
+// of the wrong colour beside a colour you cannot change is a small lie.
+//
+// Empty when nothing is settled yet, or when no variation agrees - the caller
+// falls back to the listing picture, which is the honest answer then.
+function settledVariantImages(selector: VariantSelectorPayload, selection: OptionSelection): string[] {
+  const settled = Object.entries(selection)
+  if (settled.length === 0) return []
+  const valueToOption = valueToOptionMap(selector)
+  const match = selector.variants.find((variant) =>
+    variant.enabled
+    && variant.imageUrls.length > 0
+    // Aliases counted the same way the real selection maths counts them, so a
+    // variation standing in for a value is not passed over here alone.
+    && settled.every(([optionId, valueId]) => variantAnswersTo(variant, optionId, valueId, valueToOption)),
+  )
+  return match?.imageUrls ?? []
+}
+
 function fromPrice(selector: VariantSelectorPayload): number {
   if (selector.variants.length === 0) return selector.basePrice
   return selector.variants.reduce((min, v) => (v.enabled && v.price < min ? v.price : min), Infinity)
@@ -206,10 +250,29 @@ function lineModelContext(r: ResolvedAddon, group: string, qty: number): { stage
   }
 }
 
+// Every picture worth showing for one add-on, in the order a shopper should
+// meet them: the variation's own photographs first, then the listing's own
+// behind them. "The variation" is whatever the row itself is picturing - the
+// resolved combination, or the nearest one to what is settled so far - so the
+// big view can never disagree with the thumbnail that opened it. An add-on
+// that comes exactly one way has no combination to photograph, so its listing
+// pictures stand alone. Duplicates collapse to their earliest position, which
+// keeps a picture filed under both from appearing twice.
+function galleryImages(r: ResolvedAddon): PadGalleryImage[] {
+  return dedupeGalleryImages([
+    // Wording that stays true whether the combination is fully settled or only
+    // part way there - the pictures are of the variation being SHOWN, which is
+    // not always one the shopper has finished choosing.
+    ...r.displayImages.map((url) => ({ url, alt: `${r.addon.name} - the variation shown`, group: 'variant' as const })),
+    ...r.addon.selector.baseImages.map((image) => ({ url: image.url, alt: image.alt || r.addon.name, group: 'product' as const })),
+  ])
+}
+
 export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; preview?: boolean }) {
   const [mainSelection, setMainSelection] = useState<VariantSelectionDetail | null>(null)
   const [states, setStates] = useState<Record<string, AddonState>>({})
   const [learnMore, setLearnMore] = useState<PadAddonPayload | null>(null)
+  const [gallery, setGallery] = useState<{ name: string; images: PadGalleryImage[] } | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
   // The main product's live selection, from the broadcast (snapshot on mount,
@@ -355,6 +418,12 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     const variant = addon.plain
       ? { ...PLAIN_VARIANT_SHELL, ...addon.plain }
       : complete ? resolveVariant(addon.selector, selection) : null
+    // An option-less add-on has no variations to picture - the listing's own
+    // photograph IS the product. Otherwise the resolved variation's pictures,
+    // and until there is one, the closest variation to what is settled so far.
+    const displayImages = addon.plain
+      ? []
+      : variant?.imageUrls?.length ? variant.imageUrls : settledVariantImages(addon.selector, selection)
     const recommendedPerUnit = recommendedQuantityPerUnit(addon.config.quantity, parentOptions, parentSelection)
     const perUnitQty = state.qty ?? recommendedPerUnit ?? 1
     const note = recommendationNote(addon.config.quantity, addon.name, parentOptions, parentSelection)
@@ -368,6 +437,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       available,
       unavailableReason: available ? null : unavailableReason,
       variant,
+      displayImages,
       perUnitQty: Math.max(1, perUnitQty),
       recommendedPerUnit,
       note,
@@ -472,6 +542,21 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     setState(r.addon.linkId, { added: true })
     window.setTimeout(() => setState(r.addon.linkId, { added: false }), 2000)
   }
+
+  // What each add-on is picturing, for the showcase to repeat. Published for
+  // EVERY add-on, ticked or not - the showcase card is a shop window, and its
+  // picture should show the right finish whether or not the shopper has taken
+  // the thing up yet. Add-ons with nothing better than their listing picture
+  // stay out of the bag entirely, so the showcase keeps the server's answer
+  // rather than being told to show nothing.
+  useEffect(() => {
+    if (preview) return
+    const images: Record<string, string[]> = {}
+    for (const r of resolvedAll) {
+      if (r.displayImages.length > 0) images[r.addon.linkId] = r.displayImages
+    }
+    publishAddonImages({ parentProductId: payload.productId, images })
+  }, [preview, payload.productId, resolvedAll])
 
   useEffect(() => {
     if (preview || !mainSelection?.slug) return
@@ -613,32 +698,54 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     // recommended-mode override. Free mode may still have a quantity-tagged
     // file - only the viewer knows - so no caption is safer than a wrong one.
     const contextDropped = !!addon.modelContextKey && state.enabled && addon.config.quantity.mode === 'recommended' && qtyOverridden
-    // The chosen variation's own picture the moment there is one, the listing
-    // picture until then - same story as the main product's variant-aware
-    // gallery, at thumbnail scale.
-    const thumbUrl = r.variant?.imageUrls?.[0] ?? addon.imageUrl
+    // The chosen variation's own picture the moment there is one, and before
+    // that the nearest variation to what is already settled (see
+    // settledVariantImages); the listing picture only when neither exists.
+    const thumbUrl = r.displayImages[0] ?? addon.imageUrl
+    // Every picture behind that thumbnail, for the modal the shopper opens by
+    // clicking it.
+    const images = galleryImages(r)
+    // The tick box is no longer wrapping the whole head (the picture inside it
+    // is now a button of its own, and interactive content does not belong in a
+    // label), so the name is tied to it by id instead.
+    const checkboxId = `pad-cb-${addon.linkId}`
     return (
       <div key={addon.linkId} className={`pad-row${r.depth > 1 ? ' pad-child' : ''}`} style={r.depth > 1 ? { marginLeft: `${(r.depth - 1) * 1}rem` } : undefined}>
-        <label className="pad-head">
+        <div className="pad-head">
           <input
-            type="checkbox" checked={state.enabled} disabled={preview || !r.available}
+            id={checkboxId} type="checkbox" checked={state.enabled} disabled={preview || !r.available}
             onChange={(e) => setState(addon.linkId, { enabled: e.target.checked })}
           />
-          {thumbUrl ? (
+          {thumbUrl && images.length > 0 ? (
+            <button
+              type="button" className="pad-thumbbtn" disabled={preview}
+              aria-label={`See pictures of ${addon.name}`}
+              onClick={() => setGallery({ name: addon.name, images })}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- product media is an absolute storage URL */}
+              <img className="pad-thumb" src={thumbUrl} alt="" loading="lazy" />
+              <span className="pad-thumbzoom" aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <circle cx="10.5" cy="10.5" r="6.5" />
+                  <path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6" />
+                </svg>
+              </span>
+            </button>
+          ) : thumbUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- product media is an absolute storage URL
             <img className="pad-thumb" src={thumbUrl} alt="" loading="lazy" />
           ) : (
             <span className="pad-thumb pad-thumb-empty" aria-hidden="true" />
           )}
-          <span className="pad-title">
+          <label className="pad-title" htmlFor={checkboxId}>
             <span className="pad-name">{addon.name}</span>
             <span className="pad-price">
               {price != null
                 ? `+${money(symbol, price)}${suffix}`
                 : Number.isFinite(from) ? `from ${money(symbol, from)}${suffix}` : ''}
             </span>
-          </span>
-        </label>
+          </label>
+        </div>
         <button type="button" className="pad-learn" disabled={preview} onClick={() => setLearnMore(addon)}>
           Learn more
         </button>
@@ -703,6 +810,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       {learnMore && (
         <LearnMoreModal slug={learnMore.slug} name={learnMore.name} onClose={() => setLearnMore(null)} />
       )}
+      {gallery && (
+        <AddonImageModal name={gallery.name} images={gallery.images} onClose={() => setGallery(null)} />
+      )}
     </div>
   )
 }
@@ -713,11 +823,19 @@ const PAD_BOX_CSS = `
 .pad-heading{margin:0;font-size:1.0625rem}
 .pad-row{display:grid;gap:0.5rem;border-top:1px solid var(--color-border);padding-top:0.75rem;position:relative}
 .pad-row:first-of-type{border-top:none;padding-top:0}
-.pad-head{display:flex;align-items:center;gap:0.625rem;cursor:pointer;min-width:0}
-.pad-head input{accent-color:var(--color-primary);width:1.05rem;height:1.05rem;flex-shrink:0}
-.pad-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--color-bg-subtle)}
+.pad-head{display:flex;align-items:center;gap:0.625rem;min-width:0}
+.pad-head input{accent-color:var(--color-primary);width:1.05rem;height:1.05rem;flex-shrink:0;cursor:pointer}
+.pad-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--color-bg-subtle);display:block}
 .pad-thumb-empty{display:inline-block}
-.pad-title{display:grid;min-width:0}
+/* The picture is its own control now - it opens the add-on's pictures rather
+   than ticking the box - so it says so on hover, and carries a small magnifier
+   badge for the shoppers who never hover anything. */
+.pad-thumbbtn{position:relative;padding:0;border:none;background:none;border-radius:8px;cursor:zoom-in;flex-shrink:0;line-height:0}
+.pad-thumbbtn:disabled{cursor:default}
+.pad-thumbbtn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+.pad-thumbzoom{position:absolute;right:-3px;bottom:-3px;width:17px;height:17px;border-radius:50%;background:var(--color-surface);color:var(--color-text-muted);border:1px solid var(--color-border);display:grid;place-items:center}
+.pad-thumbbtn:hover .pad-thumbzoom{color:var(--color-primary);border-color:var(--color-primary)}
+.pad-title{display:grid;min-width:0;cursor:pointer}
 .pad-name{font-weight:600;overflow-wrap:anywhere}
 .pad-price{font-size:0.8125rem;color:var(--color-text-muted)}
 .pad-learn{position:absolute;top:0.45rem;right:0;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.375rem 0.75rem}

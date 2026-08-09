@@ -34,6 +34,9 @@ export async function buildShowcasePayload(productId: string): Promise<(Showcase
         slug: addon.slug,
         shortDescription: addon.shortDescription,
         imageUrl: addon.imageUrl,
+        // The listing's own gallery, in its own order, so clicking the card's
+        // picture opens the lot rather than the one thumbnail.
+        images: addon.selector.baseImages.map((image) => ({ url: image.url, alt: image.alt })),
         fromPriceFormatted: Number.isFinite(from) ? `From ${config.currencySymbol}${from.toFixed(2)}${suffix}` : '',
       }
     }),

@@ -163,6 +163,23 @@ export async function updateLink(id: string, fields: {
   )
 }
 
+/**
+ * Renumber one product's links to the order given, `position` = index. Every
+ * statement is pinned to `productId` as well as the id, so an id belonging to
+ * another product cannot be renumbered by a stray request, and they go in one
+ * transaction so the list is never seen half-renumbered. Ids not listed are
+ * left where they are - the caller sends the whole list.
+ */
+export async function reorderLinks(productId: string, orderedIds: string[]): Promise<void> {
+  if (orderedIds.length === 0) return
+  await prisma.$transaction(
+    orderedIds.map((id, index) => prisma.$executeRaw`
+      UPDATE "pad_links" SET "position" = ${index}, "updated_at" = NOW()
+      WHERE "id" = ${id} AND "product_id" = ${productId}
+    `),
+  )
+}
+
 export async function deleteLink(id: string): Promise<void> {
   await prisma.$executeRaw`DELETE FROM "pad_links" WHERE "id" = ${id}`
 }
