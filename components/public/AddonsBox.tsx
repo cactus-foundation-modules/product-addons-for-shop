@@ -3,11 +3,13 @@
 // The add-ons box: the small panel under Add to basket where a shopper ticks
 // the accessories they want with the product they are configuring.
 //
-// It never adds anything itself. It registers a purchase-companion provider
-// with shop-variations (see that module's lib/purchase-companions.ts - a
-// window seam, no imports either way at runtime beyond the contract types) and
-// hands over its lines the moment the shopper presses the ordinary Add to
-// basket button. One press, one basket group.
+// Each add-on row carries its OWN add-to-basket button (styled to match the
+// main product's): an add-on goes in the basket when its button is pressed and
+// never rides along on the main product's add. The two purchases stay related,
+// not joined - a purchase-companion provider stamps the main line with the
+// group only when related add-on lines are already in the basket, and adding
+// an add-on retro-stamps a main line already there, so the basket still nests
+// the set together whichever order the shopper buys in.
 //
 // Everything it knows about the main product's selection arrives on the
 // variant-selection broadcast; everything the 3D viewer needs to show the
@@ -20,8 +22,9 @@ import {
   VARIANT_SELECTION_EVENT,
   type VariantSelectionDetail,
 } from '@/modules/shop-variations/lib/selection-broadcast'
-import { registerPurchaseCompanion, type CompanionLineRequest } from '@/modules/shop-variations/lib/purchase-companions'
+import { registerPurchaseCompanion } from '@/modules/shop-variations/lib/purchase-companions'
 import { resolveVariant, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { addToCart, cartLineKey, getCart, setLineMeta } from '@/modules/shop/components/public/cart'
 import type { SvrOptionWithValues, VariantSelectorPayload } from '@/modules/shop-variations/lib/types'
 import {
   deterministicGroupKey,
@@ -39,14 +42,18 @@ import { PAD_META_KEY, type PadAddonPayload, type PadBoxPayload } from '@/module
 // unique across the whole tree).
 type AddonState = {
   enabled: boolean
-  // The shopper's own picks for choose/default options: option id -> value id.
+  // The shopper's own picks for choose/default/recommend options: option id ->
+  // value id.
   chosen: Record<string, string>
-  // Which default-mode options the shopper has overridden (by option id). An
-  // un-overridden default keeps following the main selection live.
+  // Which default/recommend-mode options the shopper has overridden (by option
+  // id). An un-overridden default keeps following the main selection live; an
+  // un-overridden recommend keeps the admin's pick.
   overridden: Record<string, boolean>
   // Quantity per one main unit; null = follow the recommendation (or 1 in free
   // mode until touched).
   qty: number | null
+  // Flash state for this row's own add-to-basket button.
+  added: boolean
 }
 
 type ResolvedAddon = {
@@ -55,8 +62,8 @@ type ResolvedAddon = {
   // Option id -> value id for every option, however its value arrives. Null
   // when the combination is not yet complete or not available.
   selection: OptionSelection | null
-  // Which options the shopper is shown (choose + default modes).
-  shown: Array<{ option: SvrOptionWithValues; mode: 'choose' | 'default'; valueId: string | null; locked: string | null }>
+  // Which options the shopper is shown (choose + default + recommend modes).
+  shown: Array<{ option: SvrOptionWithValues; mode: 'choose' | 'default' | 'recommend'; valueId: string | null; locked: string | null }>
   // Whether the mapping machinery could place every match-mode option (false =
   // unavailable for the current main configuration).
   available: boolean
@@ -97,25 +104,18 @@ function activeContextKeys(list: ActiveAddon[]): string[] {
   return keys
 }
 
-// `bundleKey`/`bundleOf` tie the group together INSIDE the modelContext bag -
-// the space planner's documented meta contract - so a saved plan can put the
-// whole set back in a basket without ever reading this module's own meta.
-// `qtyPerMain` is how many of the add-on one unit of the main line wants.
-function mainModelContext(active: ActiveAddon[], group: string): { contexts: string[]; extraValueIds: string[]; bundleKey: string } {
-  const extraValueIds = active.flatMap((r) => (r.selection ? Object.values(r.selection) : []))
-  return { contexts: activeContextKeys(active), extraValueIds, bundleKey: group }
-}
-
-function lineModelContext(r: ActiveAddon, group: string): { stage: 'none' | 'self'; bundleOf: string; qtyPerMain: number } {
-  const contextActive =
-    !!r.addon.modelContextKey &&
-    (r.addon.config.quantity.mode === 'free' || r.recommendedPerUnit == null || r.perUnitQty === r.recommendedPerUnit)
-  // Inside the combined model when its context is active; its own placeable
-  // item when the owner allows it; otherwise list-only (a loose shelf).
+// `bundleOf` ties an add-on line to its group INSIDE the modelContext bag -
+// the space planner's documented meta contract - so a saved plan can keep the
+// set together without ever reading this module's own meta. Since an add-on is
+// bought by its own button (the main line no longer carries a combined-model
+// context - which add-ons it will end up with is unknowable at its add), every
+// line stages for itself: its own placeable item when the owner allows it,
+// list-only otherwise (a loose shelf).
+function lineModelContext(r: ResolvedAddon, group: string, qty: number): { stage: 'none' | 'self'; bundleOf: string; qtyPerMain: number } {
   return {
-    stage: contextActive ? 'none' : r.addon.plannerStandalone ? 'self' : 'none',
+    stage: r.addon.plannerStandalone ? 'self' : 'none',
     bundleOf: group,
-    qtyPerMain: r.perUnitQty,
+    qtyPerMain: qty,
   }
 }
 
@@ -151,7 +151,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       if (!detail?.linkId) return
       setStates((prev) => ({
         ...prev,
-        [detail.linkId]: { ...(prev[detail.linkId] ?? { enabled: false, chosen: {}, overridden: {}, qty: null }), enabled: true },
+        [detail.linkId]: { ...(prev[detail.linkId] ?? { enabled: false, chosen: {}, overridden: {}, qty: null, added: false }), enabled: true },
       }))
       boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
@@ -176,7 +176,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
   }, [mainSelection, payload.mainOptions])
 
   const stateFor = (linkId: string): AddonState =>
-    states[linkId] ?? { enabled: false, chosen: {}, overridden: {}, qty: null }
+    states[linkId] ?? { enabled: false, chosen: {}, overridden: {}, qty: null, added: false }
 
   // Resolve one add-on (and, on recursion, a chain child) against its parent's
   // options and selection.
@@ -210,11 +210,14 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
           }
           continue
         }
-        if (mode === 'default') {
+        if (mode === 'default' || mode === 'recommend') {
+          // Followed value: the main selection's translation (default) or the
+          // admin's pick (recommend). A recommend whose picked value has
+          // vanished follows nothing and reads as a plain choice.
           const followed = r?.value?.id ?? null
           const chosen = state.overridden[option.id] ? state.chosen[option.id] ?? null : followed
           if (chosen) selection[option.id] = chosen
-          shown.push({ option, mode: 'default', valueId: chosen, locked: null })
+          shown.push({ option, mode, valueId: chosen, locked: null })
           continue
         }
         // choose (explicit or unmapped): the shopper's pick.
@@ -276,17 +279,21 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     // eslint-disable-next-line react-hooks/exhaustive-deps -- same inputs as resolvedTop
   }, [resolvedTop])
 
-  // ---- Purchase-companion registration -------------------------------------
-  // Refs so collect() - called at add-to-basket time, outside React - always
-  // reads the latest resolution without the provider re-registering per
-  // render. Updated post-commit, never during render.
-  const resolvedRef = useRef(resolvedAll)
-  const payloadRef = useRef(payload)
-  useEffect(() => {
-    resolvedRef.current = resolvedAll
-    payloadRef.current = payload
-  })
-
+  // ---- Group stamping ------------------------------------------------------
+  // An add-on line is added by its own button, never by the main add - but the
+  // basket should still nest the set whichever order the shopper buys in. The
+  // group key is deterministic from the main product being bought (the exact
+  // variation once resolved, the listing itself for an option-less product), so
+  // both sides mint the same key without talking to each other:
+  //
+  //   add-on first, main second - the companion provider below stamps the main
+  //   line as the group's main at its add, because related add-on lines are
+  //   already in the basket.
+  //   main first, add-on second - addAddonToBasket retro-stamps the main line
+  //   already in the basket.
+  //   add-on alone - no main line ever appears; the cart resolver renders the
+  //   line flat with its "Accessory for" field, which is already its orphan
+  //   behaviour.
   useEffect(() => {
     if (preview) return
     const slug = mainSelection?.slug
@@ -294,43 +301,57 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     return registerPurchaseCompanion(`product-addons:${payload.productId}`, {
       slug,
       collect: (ctx) => {
-        const active = resolvedRef.current.filter((r) => r.state.enabled && r.variant && r.available)
-        if (active.length === 0) return null
-        const parts = active.map((r) => `${r.addon.linkId}:${r.variant!.childProductId}:${r.perUnitQty}`)
-        const group = deterministicGroupKey(ctx.productId, parts)
-        const lines: CompanionLineRequest[] = active.map((r, index) => {
-          const forLabel = r.parent ? r.parent.addon.name : payloadRef.current.productName
-          const forProductId = r.parent ? r.parent.variant?.childProductId ?? r.parent.addon.addonProductId : ctx.productId
-          return {
-            productId: r.variant!.childProductId,
-            quantity: r.perUnitQty * ctx.quantity,
-            lineId: `pad:${group}:${r.addon.linkId}:${r.variant!.childProductId}`,
-            meta: {
-              [PAD_META_KEY]: {
-                group,
-                role: 'addon',
-                linkId: r.addon.linkId,
-                forProductId,
-                forLabel,
-                depth: r.depth,
-                order: index,
-                ...(r.recommendedPerUnit != null ? { recommendedPerUnit: r.recommendedPerUnit } : {}),
-                ...(r.note ? { recommendedNote: r.note } : {}),
-              },
-              modelContext: lineModelContext(r, group),
-            },
-          }
+        const group = deterministicGroupKey(ctx.productId, [])
+        const related = getCart().some((line) => {
+          const pad = line.meta?.[PAD_META_KEY] as { group?: string; role?: string } | undefined
+          return pad?.role === 'addon' && pad.group === group
         })
-        return {
-          mainMeta: {
-            [PAD_META_KEY]: { group, role: 'main' },
-            modelContext: mainModelContext(active, group),
-          },
-          lines,
-        }
+        // Nothing of this group in the basket: stay out of the add entirely, so
+        // a product bought without accessories keeps its plain, mergeable line.
+        return related ? { mainMeta: { [PAD_META_KEY]: { group, role: 'main' } }, lines: [] } : null
       },
     })
   }, [preview, mainSelection?.slug, payload.productId])
+
+  // The exact main product an add-on bought NOW would be for: the resolved
+  // variation, or the listing itself while options are unsettled (matching what
+  // the main add-to-basket would add for an option-less product; a half-chosen
+  // configuration groups with nothing, and the add-on line renders flat).
+  const mainTargetId = mainSelection?.productId ?? payload.productId
+
+  function addAddonToBasket(r: ResolvedAddon & { depth: number; parent: ResolvedAddon | null }, index: number) {
+    if (!r.variant) return
+    const group = deterministicGroupKey(mainTargetId, [])
+    const qty = r.perUnitQty
+    const forLabel = r.parent ? r.parent.addon.name : payload.productName
+    const forProductId = r.parent ? r.parent.variant?.childProductId ?? r.parent.addon.addonProductId : mainTargetId
+    addToCart(r.variant.childProductId, qty, {
+      // Stable id: re-adding the same add-on for the same main merges quantity
+      // into the existing line instead of stacking a twin.
+      lineId: `pad:${group}:${r.addon.linkId}:${r.variant.childProductId}`,
+      meta: {
+        [PAD_META_KEY]: {
+          group,
+          role: 'addon',
+          linkId: r.addon.linkId,
+          forProductId,
+          forLabel,
+          depth: r.depth,
+          order: index,
+          ...(r.recommendedPerUnit != null ? { recommendedPerUnit: r.recommendedPerUnit } : {}),
+          ...(r.note ? { recommendedNote: r.note } : {}),
+        },
+        modelContext: lineModelContext(r, group, qty),
+      },
+    })
+    // A main line already in the basket joins the group now, so the nesting
+    // works in this buying order too. Only an unstamped line is touched - never
+    // another module's meta, never an already-stamped group.
+    const mainLine = getCart().find((line) => line.productId === mainTargetId && !(line.meta?.[PAD_META_KEY]))
+    if (mainLine) setLineMeta(cartLineKey(mainLine), { [PAD_META_KEY]: { group, role: 'main' } })
+    setState(r.addon.linkId, { added: true })
+    window.setTimeout(() => setState(r.addon.linkId, { added: false }), 2000)
+  }
 
   useEffect(() => {
     if (preview || !mainSelection?.slug) return
@@ -361,12 +382,17 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       )
     }
     const isSwatch = option.controlType === 'SWATCH' || option.controlType === 'IMAGE'
-    const followedNote = mode === 'default' && !r.state.overridden[option.id]
+    // The little provenance note beside the option name: a default follows the
+    // shopper's own main choice, a recommend follows the shop's suggestion -
+    // only while un-overridden, and only while there is a value to follow.
+    const followedNote = !r.state.overridden[option.id] && valueId != null
+      ? mode === 'default' ? ' - matching your choice' : mode === 'recommend' ? ' - recommended' : null
+      : null
     return (
       <div key={option.id} className="pad-opt">
         <span className="pad-optname">
           {option.name}
-          {followedNote && <em className="pad-follows"> - matching your choice</em>}
+          {followedNote && <em className="pad-follows">{followedNote}</em>}
         </span>
         <div className={isSwatch ? 'pad-swatches' : 'pad-pills'}>
           {option.values.map((value) => {
@@ -374,7 +400,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             const pick = () =>
               setState(r.addon.linkId, {
                 chosen: { ...r.state.chosen, [option.id]: value.id },
-                overridden: mode === 'default' ? { ...r.state.overridden, [option.id]: true } : r.state.overridden,
+                overridden: mode === 'default' || mode === 'recommend'
+                  ? { ...r.state.overridden, [option.id]: true }
+                  : r.state.overridden,
               })
             if (isSwatch) {
               const swatchUrl = value.swatchSmall || value.swatch
@@ -404,19 +432,19 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             )
           })}
         </div>
-        {mode === 'default' && r.state.overridden[option.id] && (
+        {(mode === 'default' || mode === 'recommend') && r.state.overridden[option.id] && (
           <button
             type="button" className="pad-reset" disabled={preview}
             onClick={() => setState(r.addon.linkId, { overridden: { ...r.state.overridden, [option.id]: false } })}
           >
-            Match my choice again
+            {mode === 'default' ? 'Match my choice again' : 'Back to the recommendation'}
           </button>
         )}
       </div>
     )
   }
 
-  function renderAddonRow(r: ResolvedAddon & { depth: number }) {
+  function renderAddonRow(r: ResolvedAddon & { depth: number; parent: ResolvedAddon | null }, index: number) {
     const { addon, state } = r
     const price = r.variant ? r.variant.price * r.perUnitQty : null
     const from = fromPrice(addon.selector)
@@ -425,6 +453,10 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     // recommended-mode override. Free mode may still have a quantity-tagged
     // file - only the viewer knows - so no caption is safer than a wrong one.
     const contextDropped = !!addon.modelContextKey && state.enabled && addon.config.quantity.mode === 'recommended' && qtyOverridden
+    // The chosen variation's own picture the moment there is one, the listing
+    // picture until then - same story as the main product's variant-aware
+    // gallery, at thumbnail scale.
+    const thumbUrl = r.variant?.imageUrls?.[0] ?? addon.imageUrl
     return (
       <div key={addon.linkId} className={`pad-row${r.depth > 1 ? ' pad-child' : ''}`} style={r.depth > 1 ? { marginLeft: `${(r.depth - 1) * 1}rem` } : undefined}>
         <label className="pad-head">
@@ -432,9 +464,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             type="checkbox" checked={state.enabled} disabled={preview || !r.available}
             onChange={(e) => setState(addon.linkId, { enabled: e.target.checked })}
           />
-          {addon.imageUrl ? (
+          {thumbUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- product media is an absolute storage URL
-            <img className="pad-thumb" src={addon.imageUrl} alt="" loading="lazy" />
+            <img className="pad-thumb" src={thumbUrl} alt="" loading="lazy" />
           ) : (
             <span className="pad-thumb pad-thumb-empty" aria-hidden="true" />
           )}
@@ -458,10 +490,22 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             {r.shown.map((entry) => renderOptionPicker(r, entry))}
             <div className="pad-qty">
               <span className="pad-optname">Quantity</span>
-              <div className="pad-stepper">
-                <button type="button" aria-label={`Fewer ${addon.name}`} disabled={preview || r.perUnitQty <= 1} onClick={() => setState(addon.linkId, { qty: Math.max(1, r.perUnitQty - 1) })}>−</button>
-                <span aria-live="polite">{r.perUnitQty}</span>
-                <button type="button" aria-label={`More ${addon.name}`} disabled={preview} onClick={() => setState(addon.linkId, { qty: r.perUnitQty + 1 })}>+</button>
+              {/* Quantity input + the add-on's own add button, deliberately the
+                  same shapes as the main product's purchase row (shop-variations'
+                  add-to-cart part) so the two read as one system. */}
+              <div className="pad-buyrow">
+                <input
+                  type="number" min={1} value={r.perUnitQty} aria-label={`Quantity of ${addon.name}`}
+                  className="pad-qtyinput" disabled={preview}
+                  onChange={(e) => setState(addon.linkId, { qty: Math.max(1, Number(e.target.value) || 1) })}
+                />
+                <button
+                  type="button" className="pad-addbtn"
+                  disabled={preview || !r.variant || !r.variant.inStock}
+                  onClick={() => addAddonToBasket(r, index)}
+                >
+                  {state.added ? 'Added ✓' : 'Add to cart'}
+                </button>
               </div>
               {qtyOverridden && r.note && <p className="pad-note">{r.note}</p>}
               {contextDropped && r.variant && (
@@ -489,7 +533,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     <div ref={boxRef} className="pad-box">
       <style dangerouslySetInnerHTML={{ __html: PAD_BOX_CSS }} />
       <h3 className="pad-heading">{payload.nounPlural}</h3>
-      {resolvedAll.map((r) => renderAddonRow(r))}
+      {resolvedAll.map((r, index) => renderAddonRow(r, index))}
       {learnMore && (
         <LearnMoreModal slug={learnMore.slug} name={learnMore.name} onClose={() => setLearnMore(null)} />
       )}
@@ -510,8 +554,9 @@ const PAD_BOX_CSS = `
 .pad-title{display:grid;min-width:0}
 .pad-name{font-weight:600;overflow-wrap:anywhere}
 .pad-price{font-size:0.8125rem;color:var(--color-text-muted)}
-.pad-learn{position:absolute;top:0.75rem;right:0;background:none;border:none;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.125rem}
-.pad-row:first-of-type .pad-learn{top:0}
+.pad-learn{position:absolute;top:0.45rem;right:0;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.375rem 0.75rem}
+.pad-learn:hover{background:var(--color-bg-subtle)}
+.pad-row:first-of-type .pad-learn{top:-0.3rem}
 .pad-body{display:grid;gap:0.625rem;padding-left:1.7rem}
 .pad-opt,.pad-qty{display:grid;gap:0.3rem}
 .pad-optname{font-size:0.8125rem;font-weight:500}
@@ -525,9 +570,13 @@ const PAD_BOX_CSS = `
 .pad-pill{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:999px;padding:0.25rem 0.75rem;font-size:0.8125rem;cursor:pointer}
 .pad-pill.pad-on{border-color:var(--color-primary);color:var(--color-primary);font-weight:600}
 .pad-reset{justify-self:start;background:none;border:none;color:var(--color-primary);cursor:pointer;font-size:0.75rem;padding:0}
-.pad-stepper{display:inline-flex;align-items:center;gap:0.75rem;border:1px solid var(--color-border);border-radius:8px;padding:0.2rem 0.6rem;width:max-content}
-.pad-stepper button{background:none;border:none;font-size:1rem;cursor:pointer;color:var(--color-text);padding:0 0.25rem}
-.pad-stepper button:disabled{opacity:0.4;cursor:default}
+.pad-buyrow{display:flex;gap:0.75rem;align-items:center}
+/* Mirrors shop-variations' add-to-cart part: the same 64px numeric quantity
+   field and the same primary-filled button, so an add-on's purchase row reads
+   exactly like the main product's above it. */
+.pad-qtyinput{width:64px;padding:0.5rem;border-radius:6px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);font:inherit}
+.pad-addbtn{flex:1;background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:8px;padding:0.75rem 1.25rem;font:inherit;font-weight:600;cursor:pointer}
+.pad-addbtn:disabled{background:var(--color-bg-subtle);color:var(--color-text-muted);cursor:not-allowed}
 .pad-note,.pad-hint{margin:0;font-size:0.75rem;color:var(--color-text-muted)}
 .pad-warn{margin:0;font-size:0.8125rem;color:var(--color-danger)}
 .pad-child{border-top-style:dashed}

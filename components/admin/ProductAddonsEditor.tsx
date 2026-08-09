@@ -195,6 +195,7 @@ function LinkEditor({ view, mainOptions, onPatch, onRemove }: {
                 <select style={field} value={mapping.mode} onChange={(e) => setMapping(option.name, { mode: e.target.value as PadOptionMapping['mode'] })}>
                   <option value="match">Matches a main option (hidden)</option>
                   <option value="default">Follows a main option, changeable</option>
+                  <option value="recommend">Pick a recommendation, changeable</option>
                   <option value="choose">Shopper chooses</option>
                   <option value="fixed">Always one value</option>
                 </select>
@@ -204,9 +205,9 @@ function LinkEditor({ view, mainOptions, onPatch, onRemove }: {
                     {mainOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
                   </select>
                 )}
-                {mapping.mode === 'fixed' && (
+                {(mapping.mode === 'fixed' || mapping.mode === 'recommend') && (
                   <select style={field} value={mapping.fixedValueSlug ?? ''} onChange={(e) => setMapping(option.name, { fixedValueSlug: e.target.value })}>
-                    <option value="">Pick the value…</option>
+                    <option value="">{mapping.mode === 'fixed' ? 'Pick the value…' : 'Pick the recommended value…'}</option>
                     {option.values.map((v) => <option key={v.slug} value={v.slug}>{v.label}</option>)}
                   </select>
                 )}

@@ -11,9 +11,9 @@ export const productAddonsTabProvider: ShopDetailTabProvider = {
   // Fallback name only - labelFor below names the tab from the owner's setting.
   label: 'Add-ons',
 
-  // Directly after shop's own Description (10), before Specification (20):
-  // what goes WITH the product belongs beside what the product is.
-  order: 15,
+  // After Specification (20): the strip reads Description, Specification, then
+  // what goes WITH the product.
+  order: 25,
 
   load: async (productId: string) => {
     const payload = await buildShowcasePayload(productId)

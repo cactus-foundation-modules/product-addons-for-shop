@@ -41,6 +41,9 @@ export function LearnMoreModal({ slug, name, onClose }: { slug: string; name: st
           </button>
         </div>
         <iframe className="padlm-frame" src={`/shop/products/${encodeURIComponent(slug)}/details`} title={`About ${name}`} loading="eager" />
+        <div className="padlm-foot">
+          <button type="button" className="padlm-done" onClick={onClose}>Close</button>
+        </div>
       </div>
     </div>,
     document.body,
@@ -50,10 +53,12 @@ export function LearnMoreModal({ slug, name, onClose }: { slug: string; name: st
 const CSS = `
 .padlm-wrap{position:fixed;inset:0;z-index:960;display:grid;place-items:center;padding:1rem}
 .padlm-overlay{position:absolute;inset:0;background:color-mix(in srgb, var(--color-text) 45%, transparent)}
-.padlm-panel{position:relative;background:var(--color-surface);color:var(--color-text);border-radius:14px;width:min(920px,100%);height:min(84vh,900px);display:grid;grid-template-rows:auto 1fr;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.35)}
+.padlm-panel{position:relative;background:var(--color-surface);color:var(--color-text);border-radius:14px;width:min(920px,100%);height:min(84vh,900px);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.35)}
 .padlm-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:0.75rem 1rem;border-bottom:1px solid var(--color-border)}
 .padlm-title{margin:0;font-size:1.0625rem}
 .padlm-close{background:none;border:none;color:var(--color-text-muted);cursor:pointer;padding:0.25rem;display:grid;place-items:center}
 .padlm-frame{width:100%;height:100%;border:none;background:var(--color-surface)}
+.padlm-foot{display:flex;justify-content:center;padding:0.75rem 1rem;border-top:1px solid var(--color-border)}
+.padlm-done{background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:8px;padding:0.625rem 2.5rem;font:inherit;font-weight:600;cursor:pointer}
 @media (max-width:640px){.padlm-wrap{padding:0}.padlm-panel{width:100%;height:100%;border-radius:0}}
 `

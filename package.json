@@ -1,6 +1,6 @@
 {
   "name": "cactus-module-product-addons-for-shop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Offer real products as add-ons (accessories) on another product's page, bought together as grouped basket lines",
   "license": "MIT",
   "private": true

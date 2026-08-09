@@ -15,7 +15,11 @@ import type { SvrOptionWithValues, VariantSelectorPayload } from '@/modules/shop
 //              screen's frame colour defaults to the desk's).
 //   'choose' - the shopper picks in the add-on's own row (the screen's fabric).
 //   'fixed'  - pinned to one value by the admin, hidden.
-export type PadMappingMode = 'match' | 'default' | 'choose' | 'fixed'
+//   'recommend' - pre-selected to one value by the admin, shown and overridable
+//              (the admin's pick rather than a main option's; a recommendation,
+//              not a rule). A recommended value that has since vanished from
+//              the product degrades to a plain shopper choice.
+export type PadMappingMode = 'match' | 'default' | 'choose' | 'fixed' | 'recommend'
 
 export type PadOptionMapping = {
   // The add-on product's option, by NAME (unique per product in shop-variations).
@@ -28,7 +32,8 @@ export type PadOptionMapping = {
   // anything not listed falls back to automatic matching (shared source_ref,
   // then equal slug, then equal label, case-insensitive).
   valueMap?: Record<string, string>
-  // For fixed: the add-on value's slug.
+  // For fixed/recommend: the admin-picked value's slug. Shared so switching a
+  // rule between the two modes keeps the picked value.
   fixedValueSlug?: string
 }
 

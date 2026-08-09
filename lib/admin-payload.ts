@@ -111,6 +111,9 @@ async function buildLinkView(link: PadLink, mainOptions: SvrOptionWithValues[]):
     if (mapping.mode === 'fixed' && !addonOption.values.some((v) => v.slug === mapping.fixedValueSlug)) {
       warnings.push(`The pinned value for "${mapping.addonOption}" no longer exists on the linked product.`)
     }
+    if (mapping.mode === 'recommend' && !addonOption.values.some((v) => v.slug === mapping.fixedValueSlug)) {
+      warnings.push(`The recommended value for "${mapping.addonOption}" no longer exists on the linked product - shoppers are asked to choose instead.`)
+    }
   }
 
   const modelCoverage = link.modelContextKey

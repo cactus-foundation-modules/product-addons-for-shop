@@ -163,14 +163,17 @@ export const resolveProductAddonLineMeta: CartLineResolver = async (
   }
 
   const main = store.prefetched ? store.mainsByGroup.get(pad.group) : undefined
-  const fields: LineMetaField[] = [{ label: `${settings.nounSingular} for`, value: pad.forLabel }]
 
-  // Orphan: the main has left the basket. Flat line, the field kept - it still
-  // says what the thing was bought for.
+  // Orphan: the main has left the basket. Flat line, with the "for" field kept
+  // - it still says what the thing was bought for.
   if (store.prefetched && !main) {
-    return { ...VALID, persistMeta: { fields } }
+    return { ...VALID, persistMeta: { fields: [{ label: `${settings.nounSingular} for`, value: pad.forLabel }] } }
   }
 
+  // Grouped: the caption ("↳ Accessory for …") already says what the line is
+  // attached to, so no "for" field beside it - it read twice. Only the drift
+  // advisory earns a field here.
+  const fields: LineMetaField[] = []
   const advisory = store.advisoryByLine.get(lineKeyOf(product.id, pad))
   if (advisory) fields.push({ label: 'Recommended', value: advisory })
 

@@ -5,7 +5,7 @@ import { deleteLink, getLinkById, updateLink } from '@/modules/product-addons-fo
 
 const MappingSchema = z.object({
   addonOption: z.string().trim().min(1),
-  mode: z.enum(['match', 'default', 'choose', 'fixed']),
+  mode: z.enum(['match', 'default', 'choose', 'fixed', 'recommend']),
   mainOption: z.string().trim().optional(),
   valueMap: z.record(z.string()).optional(),
   fixedValueSlug: z.string().trim().optional(),

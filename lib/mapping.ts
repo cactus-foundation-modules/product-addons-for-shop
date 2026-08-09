@@ -78,9 +78,12 @@ export function resolveMappings(
       out.push({ mapping, addonOption, value: null, mainOption: null })
       continue
     }
-    if (mapping.mode === 'fixed') {
-      const fixed = addonOption.values.find((v) => v.slug === mapping.fixedValueSlug) ?? null
-      out.push({ mapping, addonOption, value: fixed, mainOption: null })
+    if (mapping.mode === 'fixed' || mapping.mode === 'recommend') {
+      // Both read the admin-picked value. Fixed treats a vanished value as
+      // unavailability (the box's business); recommend degrades to a plain
+      // choice there, so null is simply "nothing to pre-select".
+      const picked = addonOption.values.find((v) => v.slug === mapping.fixedValueSlug) ?? null
+      out.push({ mapping, addonOption, value: picked, mainOption: null })
       continue
     }
     const mainOption = findOptionByName(mainOptions, mapping.mainOption)
