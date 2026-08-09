@@ -12,6 +12,7 @@ const SAMPLE: PadBoxPayload = {
   nounPlural: 'Add-ons',
   priceSuffix: '',
   currencySymbol: '£',
+  staffView: false,
   addons: [
     {
       linkId: 'sample-1',
@@ -28,6 +29,7 @@ const SAMPLE: PadBoxPayload = {
         baseImages: [], options: [], variants: [], addons: [],
       },
       plain: null,
+      outOfStock: false,
       children: [],
     },
   ],

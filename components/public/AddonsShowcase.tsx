@@ -32,6 +32,12 @@ export type ShowcaseCard = {
   // sits in caches that predate the field; one serialised before this shipped
   // simply has an unclickable picture, as it always did.
   images?: Array<{ url: string; alt: string }>
+  // Nothing of this add-on left to sell. A shopper is never handed a card in
+  // this state - the server drops it - so a true here means staff are looking,
+  // and the card says so plainly rather than tempting anyone with it. Optional
+  // for the same reason `images` is: a payload serialised before this shipped
+  // simply has no badge, as it always did.
+  outOfStock?: boolean
   fromPriceFormatted: string
 }
 
@@ -106,9 +112,13 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
               <div className="pads-img pads-img-empty" aria-hidden="true" />
             )}
             <div className="pads-body">
-              <p className="pads-name">{card.name}</p>
+              <p className="pads-name">
+                {card.name}
+                {card.outOfStock && <span className="pads-oos">Out of stock</span>}
+              </p>
               {card.shortDescription && <p className="pads-blurb">{card.shortDescription}</p>}
               <p className="pads-price">{card.fromPriceFormatted}</p>
+              {card.outOfStock && <p className="pads-staff">Shoppers cannot see this one while it is out of stock.</p>}
               <div className="pads-actions">
                 <button type="button" className="pads-learn" disabled={preview} onClick={() => setLearnMore(card)}>
                   Learn more
@@ -142,6 +152,8 @@ const CSS = `
 .pads-imgbtn:focus-visible{outline:2px solid var(--color-primary);outline-offset:-2px}
 .pads-body{padding:0.75rem;display:grid;gap:0.375rem;align-content:start}
 .pads-name{margin:0;font-weight:600}
+.pads-oos{margin-left:0.5rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:var(--color-danger);border:1px solid var(--color-danger);border-radius:999px;padding:0.05rem 0.4rem;vertical-align:middle;white-space:nowrap}
+.pads-staff{margin:0;font-size:0.75rem;color:var(--color-text-muted)}
 .pads-blurb{margin:0;font-size:0.8125rem;color:var(--color-text-muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .pads-price{margin:0;font-size:0.875rem;color:var(--color-text-muted)}
 .pads-actions{display:flex;gap:0.5rem;margin-top:0.25rem}

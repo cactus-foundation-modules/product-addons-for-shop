@@ -1,12 +1,14 @@
 import { getProductsByIds } from '@/modules/shop/lib/db/products'
 import { getPrimaryProductImages } from '@/modules/shop/lib/db/products'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
+import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
 import { effectivePrice } from '@/modules/shop/lib/pricing'
 import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getVariantSelectorPayload } from '@/modules/shop-variations/lib/variants-service'
 import { getLinksForProduct } from '@/modules/product-addons-for-shop/lib/db/links'
 import { getPadSettings } from '@/modules/product-addons-for-shop/lib/db/settings'
+import { isAddonOutOfStock } from '@/modules/product-addons-for-shop/lib/stock'
 import type { PadAddonPayload, PadBoxPayload, PadLink } from '@/modules/product-addons-for-shop/lib/types'
 
 // Builds the storefront payload for one main product: its enabled links, each
@@ -71,6 +73,7 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
   return {
     linkId: link.id,
     addonProductId: link.addonProductId,
+    outOfStock: isAddonOutOfStock({ plain, selector }),
     name: product.name,
     slug: product.slug,
     shortDescription: product.shortDescription ?? null,
@@ -84,19 +87,33 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
   }
 }
 
+// Sold-out add-ons, and any accessories hanging beneath them, taken out
+// altogether - what a shopper is handed. A child of a dropped add-on goes with
+// its parent whether it has stock or not: there is nothing left to attach it to.
+function withoutSoldOut(list: PadAddonPayload[]): PadAddonPayload[] {
+  return list
+    .filter((a) => !a.outOfStock)
+    .map((a) => ({ ...a, children: withoutSoldOut(a.children) }))
+}
+
 export async function buildBoxPayload(productId: string): Promise<PadBoxPayload | null> {
   const links = await getLinksForProduct(productId, true)
   if (links.length === 0) return null
 
   const visited = new Set<string>([productId])
-  const [addons, mainOptions, settings, config, mainProducts] = await Promise.all([
+  const [addons, mainOptions, settings, config, mainProducts, staffView] = await Promise.all([
     Promise.all(links.map((link) => buildAddon(link, visited, 1))),
     getOptionsWithValues(productId),
     getPadSettings(),
     getShopConfigCached(),
     getProductsByIds([productId]),
+    canSeeStockLevels(),
   ])
-  const usable = addons.filter((a): a is PadAddonPayload => a !== null)
+  const built = addons.filter((a): a is PadAddonPayload => a !== null)
+  // A shopper is only offered what can actually be sent; staff see the lot, with
+  // the sold-out ones badged and their buy buttons shut. Every add-on gone that
+  // way is the same as none at all - no box, no tab.
+  const usable = staffView ? built : withoutSoldOut(built)
   if (usable.length === 0) return null
 
   return {
@@ -108,5 +125,6 @@ export async function buildBoxPayload(productId: string): Promise<PadBoxPayload 
     addons: usable,
     priceSuffix: usable[0]?.selector.priceSuffix ?? '',
     currencySymbol: config.currencySymbol,
+    staffView,
   }
 }

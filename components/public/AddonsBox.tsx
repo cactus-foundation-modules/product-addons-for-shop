@@ -38,6 +38,7 @@ import {
   recommendedQuantityPerUnit,
   resolveMappings,
 } from '@/modules/product-addons-for-shop/lib/mapping'
+import { isValueOutOfStock } from '@/modules/product-addons-for-shop/lib/stock'
 import { publishModelContext } from '@/modules/product-addons-for-shop/lib/model-context'
 import { publishAddonImages } from '@/modules/product-addons-for-shop/lib/addon-images'
 import { ADDON_FOCUS_EVENT, type AddonFocusDetail } from '@/modules/product-addons-for-shop/lib/accessory-focus'
@@ -73,6 +74,17 @@ type ResolvedAddon = {
   // Option id -> value id for every option, however its value arrives. Null
   // when the combination is not yet complete or not available.
   selection: OptionSelection | null
+  // The same map WITHOUT the completeness gate - everything settled so far,
+  // however far that goes. What the stock question is asked against: a fabric's
+  // availability depends on the width already matched off the desk, whether or
+  // not the rest of the row has been filled in.
+  settled: OptionSelection
+  // The options whose value is not the shopper's to change (matched off the main
+  // product, or pinned by the shop). They constrain every other option's stock
+  // regardless of where they sit in display order - a locked value is settled by
+  // definition, so it cannot be the "later pick" the directional rule protects
+  // against.
+  lockedOptionIds: string[]
   // Which options the shopper is shown (choose + default + recommend modes).
   // `followed` is the value this option would take on its own (the main
   // selection's translation for a default, the shop's pick for a recommend);
@@ -341,6 +353,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     const selection: OptionSelection = {}
     const shown: ResolvedAddon['shown'] = []
     const blockedBy: string[] = []
+    const lockedOptionIds: string[] = []
     let available = resolved !== null
     let unavailableReason: string | null = resolved === null ? 'Not available at the moment' : null
 
@@ -361,6 +374,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         if (mode === 'match' || mode === 'fixed') {
           if (r?.value) {
             selection[option.id] = r.value.id
+            lockedOptionIds.push(option.id)
           } else if (mode === 'fixed' || (r?.mainOption && parentSelection[r.mainOption.id])) {
             // A fixed value that no longer exists, or a chosen main value with
             // no translation: this add-on cannot be bought for this
@@ -432,6 +446,8 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       addon,
       state,
       selection: complete ? selection : null,
+      settled: selection,
+      lockedOptionIds,
       shown,
       blockedBy,
       available,
@@ -611,6 +627,20 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       )
     }
     const isSwatch = option.controlType === 'SWATCH' || option.controlType === 'IMAGE'
+    // What this option's stock question is asked against: every locked value
+    // (matched, pinned - not the shopper's to change) plus the picks made ABOVE
+    // it in the add-on's own display order. Picks below are left out so a later
+    // choice can never grey out an earlier row and strand the shopper - the same
+    // directional rule the main product's picker follows.
+    const optionIndex = new Map(r.addon.selector.options.map((o, i) => [o.id, i]))
+    const targetIndex = optionIndex.get(option.id) ?? 0
+    const constraints: OptionSelection = {}
+    for (const [optionId, valueId] of Object.entries(r.settled)) {
+      if (optionId === option.id) continue
+      if (r.lockedOptionIds.includes(optionId) || (optionIndex.get(optionId) ?? 0) < targetIndex) {
+        constraints[optionId] = valueId
+      }
+    }
     // The name carries the pick, exactly as the main product's own options do:
     // "Frame Colour - White". A followed value adds where it came from - the
     // shopper's main choice, or the shop's recommendation - and loses it the
@@ -631,6 +661,14 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         <div className={`pad-choices ${isSwatch ? 'pad-swatches' : 'pad-pills'}`}>
           {option.values.map((value) => {
             const selected = valueId === value.id
+            // A choice the warehouse has run dry on says so and cannot be picked.
+            // Staff may still pick it - the point of the storefront for them is to
+            // check and demonstrate the product - and the add button below stays
+            // shut regardless, so a sold-out combination can be looked at and
+            // never bought.
+            const outOfStock = isValueOutOfStock(r.addon.selector, constraints, option.id, value.id)
+            const unpickable = preview || blocked || (outOfStock && !payload.staffView)
+            const valueLabel = outOfStock ? `${value.label} - out of stock` : value.label
             const pick = () =>
               setState(r.addon.linkId, {
                 chosen: { ...r.state.chosen, [option.id]: value.id },
@@ -649,15 +687,15 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                 // a chip above the swatch with a proper look at the picture (or
                 // a usable block of the colour) and the value's name under it.
                 <PadPeek
-                  key={value.id} label={value.label}
+                  key={value.id} label={valueLabel}
                   preview={isImage
                     ? <PadSwatchImg src={swatchUrl!} className="pad-peekimg" />
                     : swatchUrl ? <span aria-hidden className="pad-peekcolour" style={{ background: swatchUrl }} /> : null}
                 >
                   <button
-                    type="button" title={value.label} aria-label={`${option.name}: ${value.label}`}
-                    aria-pressed={selected} disabled={preview || blocked}
-                    className={`pad-swatch${selected ? ' pad-on' : ''}`}
+                    type="button" title={valueLabel} aria-label={`${option.name}: ${valueLabel}`}
+                    aria-pressed={selected} disabled={unpickable}
+                    className={`pad-swatch${selected ? ' pad-on' : ''}${outOfStock ? ' pad-oos' : ''}`}
                     onClick={pick}
                     style={isImage ? undefined : { background: swatchUrl || 'var(--color-bg-subtle)' }}
                   >
@@ -668,10 +706,15 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             }
             return (
               <button
-                key={value.id} type="button" aria-pressed={selected} disabled={preview || blocked}
-                className={`pad-pill${selected ? ' pad-on' : ''}`} onClick={pick}
+                key={value.id} type="button" aria-pressed={selected} disabled={unpickable}
+                title={outOfStock ? valueLabel : undefined} aria-label={outOfStock ? valueLabel : undefined}
+                className={`pad-pill${selected ? ' pad-on' : ''}${outOfStock ? ' pad-oos' : ''}`} onClick={pick}
               >
-                {value.label}
+                {/* The strike belongs to the value's name alone: text-decoration
+                    inherits and cannot be cancelled by a descendant, so putting
+                    it on the button would score through the reason as well. */}
+                {outOfStock ? <span className="pad-oosname">{value.label}</span> : value.label}
+                {outOfStock && <span className="pad-oosnote">Out of stock</span>}
               </button>
             )
           })}
@@ -738,7 +781,12 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             <span className="pad-thumb pad-thumb-empty" aria-hidden="true" />
           )}
           <label className="pad-title" htmlFor={checkboxId}>
-            <span className="pad-name">{addon.name}</span>
+            <span className="pad-name">
+              {addon.name}
+              {/* Only ever reached on a staff copy - a sold-out add-on is not in
+                  a shopper's payload at all. */}
+              {addon.outOfStock && <span className="pad-oosbadge">Out of stock</span>}
+            </span>
             <span className="pad-price">
               {price != null
                 ? `+${money(symbol, price)}${suffix}`
@@ -749,6 +797,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         <button type="button" className="pad-learn" disabled={preview} onClick={() => setLearnMore(addon)}>
           Learn more
         </button>
+        {addon.outOfStock && (
+          <p className="pad-staffnote">Shoppers cannot see this {payload.nounSingular.toLowerCase()} while it is out of stock.</p>
+        )}
         {!r.available && state.enabled && (
           <p className="pad-warn">{r.unavailableReason}</p>
         )}
@@ -793,7 +844,11 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
               </p>
             )}
             {r.selection && !r.variant && <p className="pad-warn">That combination is not available.</p>}
-            {r.variant && !r.variant.inStock && <p className="pad-warn">Out of stock in that combination.</p>}
+            {/* An add-on that comes exactly one way has no combination to blame -
+                the thing itself is out of stock. */}
+            {r.variant && !r.variant.inStock && (
+              <p className="pad-warn">{addon.plain ? 'Out of stock.' : 'Out of stock in that combination.'}</p>
+            )}
           </div>
         )}
       </div>
@@ -837,6 +892,9 @@ const PAD_BOX_CSS = `
 .pad-thumbbtn:hover .pad-thumbzoom{color:var(--color-primary);border-color:var(--color-primary)}
 .pad-title{display:grid;min-width:0;cursor:pointer}
 .pad-name{font-weight:600;overflow-wrap:anywhere}
+/* Staff-only chrome: a shopper is never handed a sold-out add-on to badge. */
+.pad-oosbadge{margin-left:0.5rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:var(--color-danger);border:1px solid var(--color-danger);border-radius:999px;padding:0.05rem 0.4rem;vertical-align:middle;white-space:nowrap}
+.pad-staffnote{margin:0;font-size:0.75rem;color:var(--color-text-muted);padding-left:1.7rem}
 .pad-price{font-size:0.8125rem;color:var(--color-text-muted)}
 .pad-learn{position:absolute;top:0.45rem;right:0;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.375rem 0.75rem}
 .pad-learn:hover{background:var(--color-bg-subtle)}
@@ -872,6 +930,13 @@ const PAD_BOX_CSS = `
 .pad-pill{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:999px;padding:0.25rem 0.75rem;font-size:0.8125rem;cursor:pointer;vertical-align:top;margin:0 0.375rem 0.375rem 0}
 .pad-pill.pad-on{border-color:var(--color-primary);color:var(--color-primary);font-weight:600}
 .pad-pill:disabled{cursor:not-allowed;color:var(--color-text-muted)}
+/* A choice the warehouse has run dry on: struck through with the reason under
+   it, the same look the main product's options wear. Staff can still click it -
+   the strike says what it is, the add button says what it is not. */
+.pad-pill.pad-oos{color:var(--color-text-muted);line-height:1.25}
+.pad-oosname{text-decoration:line-through}
+.pad-oosnote{display:block;font-size:0.6875rem;line-height:1.2;color:var(--color-text-muted)}
+.pad-swatch.pad-oos{opacity:0.45}
 .pad-reset{clear:left;display:block;justify-self:start;background:none;border:none;color:var(--color-primary);cursor:pointer;font-size:0.75rem;padding:0.25rem 0 0}
 .pad-buyrow{display:flex;gap:0.75rem;align-items:center}
 /* Mirrors shop-variations' add-to-cart part: the same 64px numeric quantity

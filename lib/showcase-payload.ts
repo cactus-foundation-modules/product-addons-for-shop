@@ -37,6 +37,9 @@ export async function buildShowcasePayload(productId: string): Promise<(Showcase
         // The listing's own gallery, in its own order, so clicking the card's
         // picture opens the lot rather than the one thumbnail.
         images: addon.selector.baseImages.map((image) => ({ url: image.url, alt: image.alt })),
+        // Only ever true on a staff copy: the box payload this is built from has
+        // already dropped the sold-out add-ons for everybody else.
+        outOfStock: addon.outOfStock,
         fromPriceFormatted: Number.isFinite(from) ? `From ${config.currencySymbol}${from.toFixed(2)}${suffix}` : '',
       }
     }),

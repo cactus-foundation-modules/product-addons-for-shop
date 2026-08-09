@@ -108,6 +108,11 @@ export type PadAddonPayload = {
   // only ever say the combination was unavailable. Null whenever the add-on has
   // options, where a variation is what gets bought.
   plain: { childProductId: string; price: number; inStock: boolean; imageUrls: string[] } | null
+  // Whether the add-on has run dry altogether - nothing of it left to sell (see
+  // lib/stock.ts). A shopper never sees one of these at all: the server drops it
+  // from the payload before it leaves. Staff do, badged and unbuyable, so the
+  // owner can see the sold-out accessory rather than wonder where it went.
+  outOfStock: boolean
   // Nested add-ons of this add-on (an accessory's own accessories), one level
   // per hop. Cycle-guarded at link save AND at read (belt and braces), so a
   // malicious row cannot hang the page.
@@ -128,6 +133,11 @@ export type PadBoxPayload = {
   // Price display suffix, mirrored from the selector payloads ("inc. VAT").
   priceSuffix: string
   currencySymbol: string
+  // Whether the person looking is staff (shop's own canSeeStockLevels). Decides
+  // whether sold-out add-ons appear at all and whether a sold-out choice can be
+  // clicked - resolved per request on the server, so it cannot be forged from
+  // the browser or served to a shopper out of a shared cache.
+  staffView: boolean
 }
 
 // ---------------------------------------------------------------------------
