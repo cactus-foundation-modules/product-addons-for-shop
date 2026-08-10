@@ -192,17 +192,30 @@ function showcaseCss({ mobileBp }: Breakpoints): string {
 /* The card's picture opens the add-on's pictures rather than doing nothing at
    all, so it is a control and says so. */
 .pads-imgbtn{display:block;width:100%;padding:0;border:none;background:none;cursor:zoom-in;line-height:0}
+/* Same blanket theme rule as .pads-text below: harmless behind an opaque
+   photograph, and the site's button fill glowing through a cut-out product
+   picture the moment the pointer crosses it otherwise. */
+.pads-imgbtn:hover,.pads-imgbtn:focus,.pads-imgbtn:active{background:none !important}
 .pads-imgbtn:disabled{cursor:default}
 .pads-imgbtn:focus-visible{outline:2px solid var(--color-primary);outline-offset:-2px}
 .pads-body{padding:0.75rem;display:grid;gap:0.375rem;align-content:start}
 /* A button that has to look like nothing: the card's writing reads exactly as it
    did, with only the whole card's lift (above) and the focus ring saying it is a
-   control - not a background of its own. appearance:none matters here more than
-   on most buttons: left at the browser default, Safari and Chrome both paint
-   their own grey highlight under the pointer and while held, regardless of the
-   background:none rule right beside it - exactly the unwanted colour change
-   this replaces. */
+   control - not a background of its own.
+
+   The :hover rule is the load-bearing one and it needs its !important. The site's
+   own Styles > Buttons settings emit a BLANKET rule - main button:hover, with a
+   background of its own and an !important on it (see core's lib/design/tokens.ts)
+   - which cannot tell a call to action from an element that is only a button so
+   a keyboard can reach it. Without this the theme's button fill landed across
+   the card's name, blurb and price on hover. Nothing short of !important beats
+   it, the theme's own declaration carrying one. Shop fights the identical rule
+   in detail-parts.tsx for its quantity stepper.
+
+   appearance:none is ordinary hygiene for a button dressed as text, not part of
+   that fix. */
 .pads-text{appearance:none;-webkit-appearance:none;display:grid;gap:0.375rem;width:100%;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}
+.pads-text:hover,.pads-text:focus,.pads-text:active{background:none !important}
 .pads-text:disabled{cursor:default}
 .pads-text:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}
 .pads-name{margin:0;font-weight:600}

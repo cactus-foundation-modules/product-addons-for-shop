@@ -1002,7 +1002,12 @@ const PAD_BOX_CSS = `
    own padding off the edge, so its wording lines up with the row rather than
    sitting a few pixels short of it. */
 .pad-learn{grid-column:4;grid-row:2;justify-self:end;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.25rem 0.5rem;margin-right:-0.5rem;white-space:nowrap}
-.pad-learn:hover{background:var(--color-bg-subtle)}
+/* !important for the same reason shop's stepper needs one: the site's Styles >
+   Buttons settings emit a blanket main button:hover rule, carrying a background
+   and an !important of its own (core's lib/design/tokens.ts), that cannot tell a
+   call to action from a quiet text button - so without this the site's button
+   fill lands on Learn more instead of the subtle tint meant for it. */
+.pad-learn:hover{background:var(--color-bg-subtle) !important}
 @media (min-width:640px){
   /* Wide enough for the corner it always wanted: up on the name's line, with the
      name stopping at its own column rather than running under it. */
