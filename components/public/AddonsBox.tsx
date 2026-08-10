@@ -23,6 +23,7 @@ import {
   type VariantSelectionDetail,
 } from '@/modules/shop-variations/lib/selection-broadcast'
 import { registerPurchaseCompanion } from '@/modules/shop-variations/lib/purchase-companions'
+import { GALLERY_HOLD_ATTR } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import {
   resolveVariant,
   valueToOptionMap,
@@ -935,8 +936,13 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
 
   if (payload.addons.length === 0) return null
 
+  // Configuring an add-on is still configuring the purchase, so the phone's
+  // pinned gallery strip stays up while the shopper is in here rather than
+  // letting go at the end of the main product's own options - the picture (or 3D
+  // model) they are changing has to stay in sight while they change it.
+  // GALLERY_HOLD_ATTR is shop-variations' published seam for exactly that.
   return (
-    <div ref={boxRef} className="pad-box">
+    <div ref={boxRef} className="pad-box" {...{ [GALLERY_HOLD_ATTR]: '' }}>
       <style dangerouslySetInnerHTML={{ __html: PAD_BOX_CSS }} />
       <h3 className="pad-heading">{payload.nounPlural}</h3>
       {resolvedAll.map((r, index) => renderAddonRow(r, index))}
@@ -974,9 +980,21 @@ const PAD_BOX_CSS = `
 .pad-oosbadge{margin-left:0.5rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:var(--color-danger);border:1px solid var(--color-danger);border-radius:999px;padding:0.05rem 0.4rem;vertical-align:middle;white-space:nowrap}
 .pad-staffnote{margin:0;font-size:0.75rem;color:var(--color-text-muted);padding-left:1.7rem}
 .pad-price{font-size:0.8125rem;color:var(--color-text-muted)}
-.pad-learn{position:absolute;top:0.45rem;right:0;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.375rem 0.75rem}
+/* On a phone the add-on's name has the whole width and still wraps to two or
+   three lines, so a Learn more lifted out of the flow and parked top-right lands
+   straight on top of it. Here it stays in the flow, on its own line under the
+   name, pulled left so its label lines up with the row's edge. Only once there
+   is width to spare does it take the corner, which is where it belongs on a
+   desktop buy column - the name is one line there and the corner is empty. */
+.pad-learn{justify-self:start;margin-left:-0.75rem;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.375rem 0.75rem}
 .pad-learn:hover{background:var(--color-bg-subtle)}
-.pad-row:first-of-type .pad-learn{top:-0.3rem}
+@media (min-width:640px){
+  /* The corner is only free because the head stops short of it: a long name in
+     a narrow buy column would otherwise run under the button on a desktop too. */
+  .pad-head{padding-right:6.25rem}
+  .pad-learn{position:absolute;top:0.45rem;right:0;margin-left:0}
+  .pad-row:first-of-type .pad-learn{top:-0.3rem}
+}
 .pad-body{display:grid;gap:0.625rem;padding-left:1.7rem}
 .pad-qty{display:grid;gap:0.3rem}
 /* The choices sit AFTER the option's name, wrapping around it, exactly as the

@@ -1,6 +1,6 @@
 {
   "name": "product-addons-for-shop",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "tablePrefix": "pad_",
   "description": "Offer real products as add-ons (accessories) on another product's page: matched options, grouped basket lines, per-product pricing and shipping kept intact",
   "requiresCoreVersion": "0.5.988",
@@ -11,7 +11,7 @@
     },
     {
       "name": "shop-variations",
-      "minVersion": "0.1.121"
+      "minVersion": "0.1.128"
     }
   ],
   "permissions": [],
