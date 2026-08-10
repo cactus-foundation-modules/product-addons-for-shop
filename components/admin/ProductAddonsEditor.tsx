@@ -14,7 +14,7 @@ const API = '/api/m/product-addons-for-shop/admin'
 type SearchHit = { id: string; name: string; sku: string | null }
 
 const field: React.CSSProperties = { padding: '0.375rem 0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '0.8125rem' }
-const label: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)' }
+const label: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }
 const btn: React.CSSProperties = { ...field, cursor: 'pointer' }
 
 export function ProductAddonsEditor({ productId }: { productId: string }) {
@@ -104,11 +104,11 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
     await reload()
   }
 
-  if (!payload) return <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>Loading add-ons…</p>
+  if (!payload) return <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>Loading add-ons…</p>
 
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
-      <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+      <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
         Products offered alongside this one, bought together as one grouped basket. Each add-on
         keeps its own price, stock and delivery rules. Shoppers meet them in the order below, on
         the product page and in the showcase alike - the arrows change it.
@@ -239,7 +239,7 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
       <div style={{ display: 'grid', gap: '0.625rem' }}>
         <span style={label}>How each of its options is decided</span>
         {view.addonOptions.length === 0 && (
-          <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>No options on this product - the add-on is a single item.</p>
+          <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>No options on this product - the add-on is a single item.</p>
         )}
         {view.addonOptions.map((option) => {
           const mapping = mappingFor(option.name)
@@ -270,7 +270,7 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
               </div>
               {(mapping.mode === 'match' || mapping.mode === 'default') && mainOption && (
                 <details>
-                  <summary style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
+                  <summary style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
                     Value translations (automatic where left blank)
                   </summary>
                   <div style={{ display: 'grid', gap: '0.25rem', paddingTop: '0.375rem' }}>
@@ -342,7 +342,7 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
                     quantity: { ...quantity, perValue: { ...(quantity.perValue ?? {}), [v.slug]: Math.max(0, Number(e.target.value) || 0) } },
                   })}
                 />
-                <span style={{ color: 'var(--color-text-muted)' }}>× base</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>× base</span>
               </label>
             ))}
           </div>
@@ -359,7 +359,7 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
           Can be placed on its own in the space planner
         </label>
         {view.modelCoverage && (
-          <span style={{ fontSize: '0.75rem', color: view.modelCoverage.tagged < view.modelCoverage.variations ? 'var(--color-danger)' : 'var(--color-text-muted)', paddingBottom: '0.45rem' }}>
+          <span style={{ fontSize: '0.75rem', color: view.modelCoverage.tagged < view.modelCoverage.variations ? 'var(--color-danger)' : 'var(--color-text-secondary)', paddingBottom: '0.45rem' }}>
             3D files tagged “{view.modelCoverage.context}”: {view.modelCoverage.tagged} of {view.modelCoverage.variations} variations
           </span>
         )}

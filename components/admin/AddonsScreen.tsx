@@ -18,7 +18,7 @@ type ReportRow = {
   mainOrders: number; attachedOrders: number; attachRate: number; unitsSold: number; revenue: number
 }
 
-const th: React.CSSProperties = { textAlign: 'left', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600, padding: '0.375rem 0.75rem', borderBottom: '1px solid var(--color-border)' }
+const th: React.CSSProperties = { textAlign: 'left', fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 600, padding: '0.375rem 0.75rem', borderBottom: '1px solid var(--color-border)' }
 const td: React.CSSProperties = { padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.8125rem', verticalAlign: 'top' }
 const tabBtn = (active: boolean): React.CSSProperties => ({
   background: active ? 'var(--color-primary)' : 'transparent',
@@ -57,9 +57,9 @@ export function AddonsScreen() {
       </div>
 
       {tab === 'overview' && (
-        overview == null ? <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p> :
+        overview == null ? <p style={{ color: 'var(--color-text-secondary)' }}>Loading…</p> :
         overview.length === 0 ? (
-          <p style={{ color: 'var(--color-text-muted)' }}>
+          <p style={{ color: 'var(--color-text-secondary)' }}>
             Nothing linked yet. Open a product and use its Add-ons section to offer another product alongside it.
           </p>
         ) : (
@@ -99,8 +99,8 @@ export function AddonsScreen() {
               To <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ padding: '0.25rem 0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
             </label>
           </div>
-          {report == null ? <p style={{ color: 'var(--color-text-muted)' }}>Working it out…</p> :
-          report.length === 0 ? <p style={{ color: 'var(--color-text-muted)' }}>No add-ons configured yet, so nothing to report.</p> : (
+          {report == null ? <p style={{ color: 'var(--color-text-secondary)' }}>Working it out…</p> :
+          report.length === 0 ? <p style={{ color: 'var(--color-text-secondary)' }}>No add-ons configured yet, so nothing to report.</p> : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                 <thead><tr>
