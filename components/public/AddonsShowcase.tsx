@@ -178,10 +178,16 @@ function showcaseCss({ mobileBp }: Breakpoints): string {
    middle. Overridden on a phone below, where a card at half width would be a
    stamp. */
 .pads-one{grid-template-columns:minmax(230px,340px);justify-content:center}
-.pads-card{border:1px solid var(--color-border);border-radius:12px;overflow:hidden;background:var(--color-surface);display:grid;grid-template-rows:auto 1fr}
+/* Lift-and-shadow on hover, matching shop's own category cards (.shop-card in
+   card-parts.tsx) exactly - same offset, same shadow - so a card here reads as
+   the same sort of thing as everywhere else in the shop. The picture inside
+   zooms very slightly along with it, that part's own rule below. */
+.pads-card{border:1px solid var(--color-border);border-radius:12px;overflow:hidden;background:var(--color-surface);display:grid;grid-template-rows:auto 1fr;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .25s ease,transform .25s ease}
+.pads-card:hover{transform:translateY(-4px);box-shadow:0 8px 30px rgba(0,0,0,.10)}
 /* Square, like every other product picture on the shop - a card with its own
    ratio reads as a different sort of thing sitting in the same page. */
-.pads-img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block}
+.pads-img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;transition:transform .4s ease}
+.pads-card:hover .pads-img{transform:scale(1.03)}
 .pads-img-empty{background:var(--color-bg-subtle)}
 /* The card's picture opens the add-on's pictures rather than doing nothing at
    all, so it is a control and says so. */
@@ -190,15 +196,23 @@ function showcaseCss({ mobileBp }: Breakpoints): string {
 .pads-imgbtn:focus-visible{outline:2px solid var(--color-primary);outline-offset:-2px}
 .pads-body{padding:0.75rem;display:grid;gap:0.375rem;align-content:start}
 /* A button that has to look like nothing: the card's writing reads exactly as it
-   did, and only the pointer and the focus ring say it is a control. */
-.pads-text{display:grid;gap:0.375rem;width:100%;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}
+   did, with only the whole card's lift (above) and the focus ring saying it is a
+   control - not a background of its own. appearance:none matters here more than
+   on most buttons: left at the browser default, Safari and Chrome both paint
+   their own grey highlight under the pointer and while held, regardless of the
+   background:none rule right beside it - exactly the unwanted colour change
+   this replaces. */
+.pads-text{appearance:none;-webkit-appearance:none;display:grid;gap:0.375rem;width:100%;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}
 .pads-text:disabled{cursor:default}
 .pads-text:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}
 .pads-name{margin:0;font-weight:600}
 .pads-oos{margin-left:0.5rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:var(--color-danger);border:1px solid var(--color-danger);border-radius:999px;padding:0.05rem 0.4rem;vertical-align:middle;white-space:nowrap}
 .pads-staff{margin:0;font-size:0.75rem;color:var(--color-text-muted)}
 .pads-blurb{margin:0;font-size:0.8125rem;color:var(--color-text-muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.pads-price{margin:0;font-size:0.875rem;color:var(--color-text-muted)}
+/* Bold and in the brand colour, matching shop's own category cards
+   (.shop-card-price) rather than reading as a muted afterthought under the
+   name - the price is the reason a shopper is looking at this card at all. */
+.pads-price{margin:0;font-size:0.875rem;font-weight:600;color:var(--color-primary)}
 .pads-actions{display:flex;gap:0.5rem;margin-top:0.25rem}
 .pads-learn{background:none;border:1px solid var(--color-border);color:var(--color-text);border-radius:8px;padding:0.375rem 0.75rem;font-size:0.8125rem;cursor:pointer}
 .pads-add{background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:8px;padding:0.375rem 1rem;font-size:0.8125rem;font-weight:600;cursor:pointer}
