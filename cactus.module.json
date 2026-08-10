@@ -1,9 +1,9 @@
 {
   "name": "product-addons-for-shop",
-  "version": "0.1.12",
+  "version": "0.1.14",
   "tablePrefix": "pad_",
   "description": "Offer real products as add-ons (accessories) on another product's page: matched options, grouped basket lines, per-product pricing and shipping kept intact",
-  "requiresCoreVersion": "0.5.988",
+  "requiresCoreVersion": "0.5.1026",
   "requiresModules": [
     {
       "name": "shop",
@@ -25,16 +25,16 @@
       "component": "ProductAddonsSettingsTab"
     }
   ],
-  "navGroupLabel": "Shop",
-  "navEntries": [
-    {
-      "label": "Product add-ons",
-      "path": "/m/product-addons-for-shop/addons",
-      "icon": "<path d=\"M12 3v18M3 12h18\"/><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"3\"/>",
-      "permission": "shop.products"
-    }
-  ],
   "extensionPoints": [
+    {
+      "point": "shop.products-tabs",
+      "id": "product-addons-for-shop",
+      "label": "Add-ons",
+      "order": 30,
+      "permission": "shop.products",
+      "import": "./components/admin/AddonsTab",
+      "component": "AddonsTab"
+    },
     {
       "point": "shop.product-editor-sections",
       "id": "product-addons-inline",

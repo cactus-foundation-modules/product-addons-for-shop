@@ -1,14 +1,9 @@
-import { getSessionFromCookie } from '@/lib/auth/session'
-import { hasShopPermission } from '@/modules/shop/lib/access'
-import { AddonsScreen } from '@/modules/product-addons-for-shop/components/admin/AddonsScreen'
+import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 
-export const metadata = { title: 'Product add-ons — Admin' }
-
-export default async function ProductAddonsPage() {
-  const user = await getSessionFromCookie()
-  if (!user) return null
-  const canAccess = await hasShopPermission(user, 'shop.products', { allowAccess: true })
-  if (!canAccess) return <div className="alert alert-danger">You do not have permission to manage product add-ons.</div>
-
-  return <AddonsScreen />
+// This screen is now a tab on Shop > Catalogue rather than a sidebar link of its own.
+// The route stays put so old bookmarks land on the tab instead of a 404.
+export default async function ProductAddonsRedirect() {
+  const adminPath = (await headers()).get('x-cactus-admin-path') ?? 'cactus-admin'
+  return redirect(`/${adminPath}/m/shop/products?tab=product-addons-for-shop`)
 }
