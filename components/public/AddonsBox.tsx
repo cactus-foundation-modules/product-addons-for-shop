@@ -859,6 +859,12 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
           ) : (
             <span className="pad-thumb pad-thumb-empty" aria-hidden="true" />
           )}
+          {/* Name and price are two labels rather than one wrapping both, so the
+              head can lay them out as its own grid rows and Learn more can take a
+              column of its own beside the price. Two labels pointing at one tick
+              box is ordinary HTML, so clicking either still ticks it. The button
+              stays OUT of both: interactive content in a label would tick the box
+              on its way to opening the description. */}
           <label className="pad-title" htmlFor={checkboxId}>
             <span className="pad-name">
               {addon.name}
@@ -866,16 +872,16 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                   a shopper's payload at all. */}
               {addon.outOfStock && <span className="pad-oosbadge">Out of stock</span>}
             </span>
-            <span className="pad-price">
-              {price != null
-                ? `+${money(symbol, price)}${suffix}`
-                : Number.isFinite(from) ? `from ${money(symbol, from)}${suffix}` : ''}
-            </span>
           </label>
+          <label className="pad-price" htmlFor={checkboxId}>
+            {price != null
+              ? `+${money(symbol, price)}${suffix}`
+              : Number.isFinite(from) ? `from ${money(symbol, from)}${suffix}` : ''}
+          </label>
+          <button type="button" className="pad-learn" disabled={preview} onClick={() => setLearnMore(addon)}>
+            Learn more
+          </button>
         </div>
-        <button type="button" className="pad-learn" disabled={preview} onClick={() => setLearnMore(addon)}>
-          Learn more
-        </button>
         {addon.outOfStock && (
           <p className="pad-staffnote">Shoppers cannot see this {payload.nounSingular.toLowerCase()} while it is out of stock.</p>
         )}
@@ -962,8 +968,17 @@ const PAD_BOX_CSS = `
 .pad-heading{margin:0;font-size:1.0625rem}
 .pad-row{display:grid;gap:0.5rem;border-top:1px solid var(--color-border);padding-top:0.75rem;position:relative}
 .pad-row:first-of-type{border-top:none;padding-top:0}
-.pad-head{display:flex;align-items:center;gap:0.625rem;min-width:0}
-.pad-head input{accent-color:var(--color-primary);width:1.05rem;height:1.05rem;flex-shrink:0;cursor:pointer}
+/* Four columns - tick box, picture, words, Learn more - and two rows, the name
+   over the price. The tick box and the picture stand down both rows; the name
+   takes the whole width of the words column AND the button's on a phone, with
+   the button dropping to the price's row beside it, so nothing has to squeeze
+   the name to make room. A column of its own is also why the button cannot land
+   on the name at any width: there is no overlapping to be done in a grid. */
+.pad-head{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;align-items:center;column-gap:0.625rem;min-width:0}
+.pad-head input{grid-row:1/3;accent-color:var(--color-primary);width:1.05rem;height:1.05rem;cursor:pointer}
+.pad-head>.pad-thumb,.pad-head>.pad-thumbbtn{grid-row:1/3}
+.pad-title{grid-column:3/5;grid-row:1}
+.pad-price{grid-column:3;grid-row:2}
 .pad-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--color-bg-subtle);display:block}
 .pad-thumb-empty{display:inline-block}
 /* The picture is its own control now - it opens the add-on's pictures rather
@@ -974,26 +989,25 @@ const PAD_BOX_CSS = `
 .pad-thumbbtn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
 .pad-thumbzoom{position:absolute;right:-3px;bottom:-3px;width:17px;height:17px;border-radius:50%;background:var(--color-surface);color:var(--color-text-muted);border:1px solid var(--color-border);display:grid;place-items:center}
 .pad-thumbbtn:hover .pad-thumbzoom{color:var(--color-primary);border-color:var(--color-primary)}
-.pad-title{display:grid;min-width:0;cursor:pointer}
+.pad-title{min-width:0;cursor:pointer}
 .pad-name{font-weight:600;overflow-wrap:anywhere}
 /* Staff-only chrome: a shopper is never handed a sold-out add-on to badge. */
 .pad-oosbadge{margin-left:0.5rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:var(--color-danger);border:1px solid var(--color-danger);border-radius:999px;padding:0.05rem 0.4rem;vertical-align:middle;white-space:nowrap}
 .pad-staffnote{margin:0;font-size:0.75rem;color:var(--color-text-muted);padding-left:1.7rem}
-.pad-price{font-size:0.8125rem;color:var(--color-text-muted)}
-/* On a phone the add-on's name has the whole width and still wraps to two or
-   three lines, so a Learn more lifted out of the flow and parked top-right lands
-   straight on top of it. Here it stays in the flow, on its own line under the
-   name, pulled left so its label lines up with the row's edge. Only once there
-   is width to spare does it take the corner, which is where it belongs on a
-   desktop buy column - the name is one line there and the corner is empty. */
-.pad-learn{justify-self:start;margin-left:-0.75rem;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.375rem 0.75rem}
+.pad-price{font-size:0.8125rem;color:var(--color-text-muted);min-width:0;cursor:pointer}
+/* Beside the price on a phone, where the name has already had the full width
+   above it. It used to be lifted out of the flow and parked in the row's corner
+   at every width, which on a phone put it straight on top of a name long enough
+   to wrap - and most of them are. The negative right margin hangs the button's
+   own padding off the edge, so its wording lines up with the row rather than
+   sitting a few pixels short of it. */
+.pad-learn{grid-column:4;grid-row:2;justify-self:end;background:none;border:1px solid transparent;border-radius:8px;color:var(--color-primary);cursor:pointer;font-size:0.8125rem;padding:0.25rem 0.5rem;margin-right:-0.5rem;white-space:nowrap}
 .pad-learn:hover{background:var(--color-bg-subtle)}
 @media (min-width:640px){
-  /* The corner is only free because the head stops short of it: a long name in
-     a narrow buy column would otherwise run under the button on a desktop too. */
-  .pad-head{padding-right:6.25rem}
-  .pad-learn{position:absolute;top:0.45rem;right:0;margin-left:0}
-  .pad-row:first-of-type .pad-learn{top:-0.3rem}
+  /* Wide enough for the corner it always wanted: up on the name's line, with the
+     name stopping at its own column rather than running under it. */
+  .pad-title{grid-column:3}
+  .pad-learn{grid-row:1;padding:0.375rem 0.75rem}
 }
 .pad-body{display:grid;gap:0.625rem;padding-left:1.7rem}
 .pad-qty{display:grid;gap:0.3rem}

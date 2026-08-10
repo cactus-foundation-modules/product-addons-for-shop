@@ -5,7 +5,10 @@
 // back to the purchase area and ticks that add-on open in the box (see
 // lib/accessory-focus.ts). Rendered by the automatic tab in shop's strip AND
 // by the hand-placed block; one component so the two can never drift.
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+// breakpoints-shared touches no database, so a client component may import it
+// without dragging prisma into the page builder's bundle.
+import { DEFAULT_BREAKPOINTS, type Breakpoints } from '@/modules/shop/lib/breakpoints-shared'
 import { focusAddon } from '@/modules/product-addons-for-shop/lib/accessory-focus'
 import { LearnMoreModal } from '@/modules/product-addons-for-shop/components/public/LearnMoreModal'
 import {
@@ -44,6 +47,15 @@ export type ShowcaseCard = {
 export type ShowcasePayload = {
   nounPlural: string
   cards: ShowcaseCard[]
+  // The site's own Styles > Spacing & Breakpoints widths, so the cards collapse
+  // where the rest of the shop's grids collapse rather than at a pixel this
+  // module made up. Media queries cannot read a CSS custom property, so the
+  // resolved width has to be baked into the <style> at render time - the same
+  // reason shop's own card grid takes them as an argument. Optional for the
+  // same reason `images` is: a payload serialised before this shipped falls
+  // back to the defaults, which are the values a site gets until it changes
+  // them anyway.
+  breakpoints?: Breakpoints
 }
 
 export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload; preview?: boolean }) {
@@ -54,6 +66,7 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
   // was ever opened), event afterwards. Nothing heard = the server's listing
   // pictures stand, which is what a page without the box block gets.
   const [live, setLive] = useState<Record<string, string[]>>({})
+  const css = useMemo(() => showcaseCss(payload.breakpoints ?? DEFAULT_BREAKPOINTS), [payload.breakpoints])
 
   useEffect(() => {
     if (preview) return
@@ -80,8 +93,12 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
 
   return (
     <div className="pads-wrap">
-      <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <ul className="pads-grid">
+      <style dangerouslySetInnerHTML={{ __html: css }} />
+      {/* A single accessory stretched across a desktop-width grid reads as a
+          layout that has gone wrong rather than as one card, so on anything
+          wider than a phone it takes a card's width and sits in the middle. A
+          phone has room for one card and nothing else, so it is left alone. */}
+      <ul className={`pads-grid${payload.cards.length === 1 ? ' pads-one' : ''}`}>
         {payload.cards.map((card) => {
           // The variation the box has settled this add-on on, when there is a
           // box on the page saying so; the listing's own pictures otherwise.
@@ -112,12 +129,27 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
               <div className="pads-img pads-img-empty" aria-hidden="true" />
             )}
             <div className="pads-body">
-              <p className="pads-name">
-                {card.name}
-                {card.outOfStock && <span className="pads-oos">Out of stock</span>}
-              </p>
-              {card.shortDescription && <p className="pads-blurb">{card.shortDescription}</p>}
-              <p className="pads-price">{card.fromPriceFormatted}</p>
+              {/* The whole of the card's writing opens the description, not just
+                  the button under it - a shopper who wants to know more about an
+                  accessory reaches for its name, which until now did nothing at
+                  all. One button around the three lines rather than three of
+                  them, so the tab order gains one stop and not three, and it is
+                  named for the job rather than read out as the whole card. The
+                  staff note and the action row stay outside it: a button cannot
+                  hold another button, and the note is not a description.
+                  Everything inside is a span, since a button may only carry
+                  phrasing content - a <p> in here is invalid markup. */}
+              <button
+                type="button" className="pads-text" disabled={preview}
+                aria-label={`Learn more about ${card.name}`} onClick={() => setLearnMore(card)}
+              >
+                <span className="pads-name">
+                  {card.name}
+                  {card.outOfStock && <span className="pads-oos">Out of stock</span>}
+                </span>
+                {card.shortDescription && <span className="pads-blurb">{card.shortDescription}</span>}
+                <span className="pads-price">{card.fromPriceFormatted}</span>
+              </button>
               {card.outOfStock && <p className="pads-staff">Shoppers cannot see this one while it is out of stock.</p>}
               <div className="pads-actions">
                 <button type="button" className="pads-learn" disabled={preview} onClick={() => setLearnMore(card)}>
@@ -138,8 +170,14 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
   )
 }
 
-const CSS = `
+function showcaseCss({ mobileBp }: Breakpoints): string {
+  return `
 .pads-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:1rem}
+/* One accessory stretched the full width of a desktop reads as a layout that has
+   gone wrong rather than as one card, so it takes a card's width and sits in the
+   middle. Overridden on a phone below, where a card at half width would be a
+   stamp. */
+.pads-one{grid-template-columns:minmax(230px,340px);justify-content:center}
 .pads-card{border:1px solid var(--color-border);border-radius:12px;overflow:hidden;background:var(--color-surface);display:grid;grid-template-rows:auto 1fr}
 /* Square, like every other product picture on the shop - a card with its own
    ratio reads as a different sort of thing sitting in the same page. */
@@ -151,6 +189,11 @@ const CSS = `
 .pads-imgbtn:disabled{cursor:default}
 .pads-imgbtn:focus-visible{outline:2px solid var(--color-primary);outline-offset:-2px}
 .pads-body{padding:0.75rem;display:grid;gap:0.375rem;align-content:start}
+/* A button that has to look like nothing: the card's writing reads exactly as it
+   did, and only the pointer and the focus ring say it is a control. */
+.pads-text{display:grid;gap:0.375rem;width:100%;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}
+.pads-text:disabled{cursor:default}
+.pads-text:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}
 .pads-name{margin:0;font-weight:600}
 .pads-oos{margin-left:0.5rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;color:var(--color-danger);border:1px solid var(--color-danger);border-radius:999px;padding:0.05rem 0.4rem;vertical-align:middle;white-space:nowrap}
 .pads-staff{margin:0;font-size:0.75rem;color:var(--color-text-muted)}
@@ -159,4 +202,24 @@ const CSS = `
 .pads-actions{display:flex;gap:0.5rem;margin-top:0.25rem}
 .pads-learn{background:none;border:1px solid var(--color-border);color:var(--color-text);border-radius:8px;padding:0.375rem 0.75rem;font-size:0.8125rem;cursor:pointer}
 .pads-add{background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:8px;padding:0.375rem 1rem;font-size:0.8125rem;font-weight:600;cursor:pointer}
+/* Phones keep two accessories across, exactly as the shop's own category grids
+   do rather than dropping to one - a single tile per row turns a short list of
+   accessories into a long scroll and hides the rest below the fold. The tiles
+   are half as wide, so the wording steps down with them and the gutter closes up
+   to buy the pictures the room. The two buttons stack: side by side they want
+   more width than half a phone has, and a wrapped button row is worse than a
+   stacked one. A lone card goes back to the full width - centring one card in a
+   column that is already one card wide achieves nothing, and half of a phone is
+   not a card, it is a stamp. */
+@media (max-width:${mobileBp}){
+.pads-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.pads-one{grid-template-columns:1fr}
+.pads-body{padding:0.625rem;gap:0.25rem}
+.pads-name{font-size:0.875rem}
+.pads-blurb{font-size:0.75rem;-webkit-line-clamp:2}
+.pads-price{font-size:0.8125rem}
+.pads-actions{flex-direction:column;gap:0.375rem}
+.pads-learn,.pads-add{width:100%;padding-left:0.5rem;padding-right:0.5rem;text-align:center}
+}
 `
+}
