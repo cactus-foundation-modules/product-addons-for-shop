@@ -925,7 +925,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                   disabled={preview || !r.variant || !r.variant.inStock}
                   onClick={() => addAddonToBasket(r, index)}
                 >
-                  {state.added ? 'Added ✓' : 'Add to cart'}
+                  {state.added ? 'Added ✓' : 'Add to basket'}
                 </button>
               </div>
               {qtyOverridden && r.note && <p className="pad-note">{r.note}</p>}
@@ -1070,7 +1070,9 @@ const PAD_BOX_CSS = `
    field and the same primary-filled button, so an add-on's purchase row reads
    exactly like the main product's above it. */
 .pad-qtyinput{width:64px;padding:0.5rem;border-radius:6px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);font:inherit}
-.pad-addbtn{flex:1;background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:8px;padding:0.75rem 1.25rem;font:inherit;font-weight:600;cursor:pointer}
+/* The pill radius shop's own .spd-add wears, so the add-on's add button is the
+   same shape as the Add to basket button above it rather than a squarer cousin. */
+.pad-addbtn{flex:1;background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:9999px;padding:0.75rem 1.25rem;font:inherit;font-weight:600;cursor:pointer}
 .pad-addbtn:disabled{background:var(--color-bg-subtle);color:var(--color-text-muted);cursor:not-allowed}
 .pad-note,.pad-hint{margin:0;font-size:0.75rem;color:var(--color-text-muted)}
 .pad-warn{margin:0;font-size:0.8125rem;color:var(--color-danger)}
