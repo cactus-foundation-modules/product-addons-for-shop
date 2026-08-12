@@ -358,12 +358,48 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
           <input type="checkbox" checked={link.plannerStandalone} onChange={(e) => onPatch({ plannerStandalone: e.target.checked })} />
           Can be placed on its own in the space planner
         </label>
-        {view.modelCoverage && (
-          <span style={{ fontSize: '0.75rem', color: view.modelCoverage.tagged < view.modelCoverage.variations ? 'var(--color-danger)' : 'var(--color-text-secondary)', paddingBottom: '0.45rem' }}>
-            3D files tagged “{view.modelCoverage.context}”: {view.modelCoverage.tagged} of {view.modelCoverage.variations} variations
-          </span>
-        )}
       </div>
+
+      {contextKey.trim() && view.addonOptions.length > 0 && (
+        <div style={{ display: 'grid', gap: '0.25rem' }}>
+          <span style={label}>Which choices change the combined model</span>
+          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+            Tick an option and the shopper&rsquo;s choice is added to the key, so a different file can be shown for
+            each - a pedestal that comes in two widths wants a picture of each. Leave them all clear and one file
+            covers the accessory however it is configured.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {view.addonOptions.map((option) => (
+              <label key={option.name} style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem' }}>
+                <input
+                  type="checkbox"
+                  checked={(config.modelContextOptions ?? []).some((n) => n.trim().toLowerCase() === option.name.trim().toLowerCase())}
+                  onChange={(e) => {
+                    const rest = (config.modelContextOptions ?? []).filter((n) => n.trim().toLowerCase() !== option.name.trim().toLowerCase())
+                    // Kept in the add-on's own option order, so the key reads
+                    // the same way whichever order they were ticked in.
+                    const next = e.target.checked
+                      ? view.addonOptions.map((o) => o.name).filter((name) => name === option.name || rest.includes(name))
+                      : rest
+                    patchConfig({ ...config, modelContextOptions: next })
+                  }}
+                />
+                {option.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {view.modelCoverage && view.modelCoverage.length > 0 && (
+        <div style={{ display: 'grid', gap: '0.125rem', fontSize: '0.75rem' }}>
+          {view.modelCoverage.map((row) => (
+            <span key={row.context} style={{ color: row.tagged < row.variations ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
+              3D files tagged “{row.context}”: {row.tagged} of {row.variations} variations
+            </span>
+          ))}
+        </div>
+      )}
 
       {dirty && (
         <div>

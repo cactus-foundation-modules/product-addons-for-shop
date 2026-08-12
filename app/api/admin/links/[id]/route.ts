@@ -24,7 +24,11 @@ const PatchBody = z.object({
   position: z.number().int().min(0).optional(),
   modelContextKey: z.string().trim().max(60).regex(/^[a-z0-9-]*(:[0-9]+)?$/i, 'Context keys are letters, numbers and dashes').optional(),
   plannerStandalone: z.boolean().optional(),
-  config: z.object({ optionMappings: z.array(MappingSchema), quantity: QuantitySchema }).optional(),
+  config: z.object({
+    optionMappings: z.array(MappingSchema),
+    quantity: QuantitySchema,
+    modelContextOptions: z.array(z.string().trim().min(1)).max(4).optional(),
+  }).optional(),
 })
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

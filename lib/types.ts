@@ -57,6 +57,16 @@ export type PadQuantityRule = {
 export type PadLinkConfig = {
   optionMappings: PadOptionMapping[]
   quantity: PadQuantityRule
+  // Add-on option NAMES whose chosen value extends the 3D context key, in the
+  // order they should appear. A pedestal linked with the key `pedestal` and
+  // this set to ['Width'] announces `pedestal-30cm` or `pedestal-39cm`, so the
+  // desk's combined model can change with the width the shopper picks - one
+  // key could only ever show one size, whichever one was modelled.
+  //
+  // Empty (the usual case) keeps the bare key, exactly as before. Matching
+  // stays exact-or-base at the far end: a width nobody has built a file for
+  // falls back to the plain desk rather than showing the wrong size.
+  modelContextOptions?: string[]
 }
 
 export type PadLink = {

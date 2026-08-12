@@ -4,7 +4,7 @@ import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getAddons } from '@/modules/shop-variations/lib/db/addons'
 import { getVariants } from '@/modules/shop-variations/lib/db/variants'
 import { getLinksForProduct } from '@/modules/product-addons-for-shop/lib/db/links'
-import { findOptionByName, mapValue } from '@/modules/product-addons-for-shop/lib/mapping'
+import { contextPart, findOptionByName, mapValue } from '@/modules/product-addons-for-shop/lib/mapping'
 import type { PadLink } from '@/modules/product-addons-for-shop/lib/types'
 import type { SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
 
@@ -26,7 +26,11 @@ export type AdminLinkView = {
   // Per context key: how many of the main product's variations carry a model
   // file tagged with it, out of how many variations there are. Null when the 3D
   // module (or its context column) is absent.
-  modelCoverage: { context: string; tagged: number; variations: number } | null
+  //
+  // One row for a plain key; one per combination where the link nominates
+  // option suffixes (a pedestal's two widths make two keys, each wanting its
+  // own file on every variation).
+  modelCoverage: { context: string; tagged: number; variations: number }[] | null
 }
 
 export type AdminSectionPayload = {
@@ -38,7 +42,31 @@ function toAdminOptions(options: SvrOptionWithValues[]): AdminOption[] {
   return options.map((o) => ({ name: o.name, values: o.values.map((v) => ({ label: v.label, slug: v.slug })) }))
 }
 
-async function contextModelCounts(mainProductId: string, contextKey: string): Promise<{ tagged: number; variations: number } | null> {
+// The keys this link can actually announce: the bare one, or - where it
+// nominates option suffixes - one per combination of those options' values.
+// Capped so a link nominating several many-valued options cannot turn the
+// editor into a wall of rows; the cap is the display's business, and the
+// storefront still announces whatever the shopper picks.
+const MAX_CONTEXT_KEYS = 24
+
+function expectedContextKeys(link: PadLink, addonOptions: SvrOptionWithValues[]): string[] {
+  const base = link.modelContextKey.trim()
+  if (!base) return []
+  let keys = [base]
+  for (const name of link.config.modelContextOptions ?? []) {
+    const option = findOptionByName(addonOptions, name)
+    // A nominated option that has gone (or has no usable values) is warned
+    // about separately; the keys stop growing here rather than inventing any.
+    if (!option) return keys
+    const parts = option.values.map((v) => contextPart(v.slug || v.label)).filter(Boolean)
+    if (parts.length === 0) return keys
+    keys = keys.flatMap((key) => parts.map((part) => `${key}-${part}`))
+    if (keys.length >= MAX_CONTEXT_KEYS) return keys.slice(0, MAX_CONTEXT_KEYS)
+  }
+  return keys
+}
+
+async function contextModelCounts(mainProductId: string, contextKeys: string[]): Promise<{ context: string; tagged: number; variations: number }[] | null> {
   try {
     const [probe] = await prisma.$queryRaw<{ ok: boolean }[]>`
       SELECT (to_regclass('public.p3d_models') IS NOT NULL)
@@ -50,16 +78,21 @@ async function contextModelCounts(mainProductId: string, contextKey: string): Pr
     if (!probe?.ok) return null
     const variants = await getVariants(mainProductId)
     const childIds = variants.map((v) => v.childProductId)
-    if (childIds.length === 0) return { tagged: 0, variations: 0 }
-    // A file counts for a context whether it is the plain key or a
-    // quantity-tagged variant of it ('screens' matches 'screens' and a stored
-    // 'screens:2' counts toward the same story).
-    const rows = await prisma.$queryRaw<{ n: bigint }[]>`
-      SELECT COUNT(DISTINCT "product_id")::bigint AS "n" FROM "p3d_models"
-      WHERE "product_id" = ANY(${childIds})
-        AND ("context" = ${contextKey} OR "context" LIKE ${`${contextKey}:%`})
+    if (childIds.length === 0) return contextKeys.map((context) => ({ context, tagged: 0, variations: 0 }))
+    // Every tagged file on the range in one read, counted per key here. A file
+    // counts for a context whether it is the plain key or a quantity-tagged
+    // variant of it ('screens' matches 'screens' and a stored 'screens:2'
+    // counts toward the same story).
+    const rows = await prisma.$queryRaw<{ product_id: string; context: string }[]>`
+      SELECT DISTINCT "product_id", "context" FROM "p3d_models"
+      WHERE "product_id" = ANY(${childIds}) AND "context" <> ''
     `
-    return { tagged: Number(rows[0]?.n ?? 0), variations: childIds.length }
+    return contextKeys.map((context) => {
+      const tagged = new Set(
+        rows.filter((r) => r.context === context || r.context.startsWith(`${context}:`)).map((r) => r.product_id),
+      )
+      return { context, tagged: tagged.size, variations: childIds.length }
+    })
   } catch {
     return null
   }
@@ -116,11 +149,14 @@ async function buildLinkView(link: PadLink, mainOptions: SvrOptionWithValues[]):
     }
   }
 
-  const modelCoverage = link.modelContextKey
-    ? await contextModelCounts(link.productId, link.modelContextKey).then((counts) =>
-        counts ? { context: link.modelContextKey, ...counts } : null,
-      )
-    : null
+  for (const name of link.config.modelContextOptions ?? []) {
+    if (!findOptionByName(addonOptions, name)) {
+      warnings.push(`The 3D context key follows "${name}", which is not an option on the linked product - the combined model will not be shown until that is put right.`)
+    }
+  }
+
+  const contextKeys = expectedContextKeys(link, addonOptions)
+  const modelCoverage = contextKeys.length > 0 ? await contextModelCounts(link.productId, contextKeys) : null
 
   return {
     link,

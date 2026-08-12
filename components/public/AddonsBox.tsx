@@ -33,6 +33,7 @@ import {
 import { addToCart, cartLineKey, getCart, setLineMeta } from '@/modules/shop/components/public/cart'
 import type { SvrOptionValue, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 import {
+  composeContextKey,
   deterministicGroupKey,
   findOptionByName,
   recommendationNote,
@@ -236,13 +237,24 @@ type ActiveAddon = ResolvedAddon & { depth: number }
 /**
  * The context key one add-on contributes right now, or null for none.
  *
+ * The key is the link's own plus any option suffixes it nominates (a pedestal's
+ * width, say - see composeContextKey), so an accessory that comes in sizes can
+ * change the combined model rather than being stuck with one of them.
+ *
  * Recommended-mode with an overridden quantity contributes nothing - the
  * preview shows the standard arrangement or none, never a guess.
  */
 function addonContextKey(r: ResolvedAddon): string | null {
   if (!r.state.enabled || !r.variant || !r.available || !r.addon.modelContextKey) return null
-  if (r.addon.config.quantity.mode === 'free') return `${r.addon.modelContextKey}:${r.perUnitQty}`
-  if (r.recommendedPerUnit == null || r.perUnitQty === r.recommendedPerUnit) return r.addon.modelContextKey
+  const key = composeContextKey(
+    r.addon.modelContextKey,
+    r.addon.config.modelContextOptions,
+    r.addon.selector.options,
+    r.selection ?? {},
+  )
+  if (!key) return null
+  if (r.addon.config.quantity.mode === 'free') return `${key}:${r.perUnitQty}`
+  if (r.recommendedPerUnit == null || r.perUnitQty === r.recommendedPerUnit) return key
   return null
 }
 

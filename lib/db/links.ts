@@ -28,6 +28,9 @@ function parseConfig(raw: unknown): PadLinkConfig {
       cfg.quantity && (cfg.quantity.mode === 'recommended' || cfg.quantity.mode === 'free')
         ? cfg.quantity
         : fallback.quantity,
+    ...(Array.isArray(cfg.modelContextOptions)
+      ? { modelContextOptions: cfg.modelContextOptions.filter((n): n is string => typeof n === 'string' && n.trim() !== '') }
+      : {}),
   }
 }
 

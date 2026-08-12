@@ -157,3 +157,45 @@ export function deterministicGroupKey(mainProductId: string, parts: string[]): s
   }
   return `pad_${(hash >>> 0).toString(36)}`
 }
+
+/**
+ * The 3D context key one add-on announces, with any option suffixes composed in.
+ *
+ * The bare key ('pedestal') says only "this accessory is in shot", which is all
+ * a one-way accessory needs. An accessory that comes in sizes needs more: a
+ * 30cm pedestal and a 39cm one are different objects, and one key could only
+ * ever show whichever of them somebody had modelled. So a link may nominate
+ * add-on options (`config.modelContextOptions`, by NAME) whose chosen value
+ * slug is appended in turn - 'pedestal-30cm', 'pedestal-39cm' - and the
+ * combined file is picked per choice.
+ *
+ * Null when a nominated option has no value settled, or its value has no usable
+ * slug: matching is exact-or-base at the far end, and announcing the bare key
+ * there would show the shopper a size they had not asked for.
+ */
+export function composeContextKey(
+  baseKey: string,
+  optionNames: string[] | undefined,
+  addonOptions: SvrOptionWithValues[],
+  selection: Record<string, string>,
+): string | null {
+  const base = baseKey.trim()
+  if (!base) return null
+  const parts = [base]
+  for (const name of optionNames ?? []) {
+    const option = findOptionByName(addonOptions, name)
+    const valueId = option ? selection[option.id] : undefined
+    const value = valueId ? option?.values.find((v) => v.id === valueId) : undefined
+    const part = value ? contextPart(value.slug || value.label) : ''
+    if (!part) return null
+    parts.push(part)
+  }
+  return parts.join('-')
+}
+
+// A value slug reduced to what a context key may hold (letters, numbers and
+// dashes), so a label-derived part cannot produce a key nobody can type into
+// the model's context field.
+export function contextPart(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
