@@ -103,12 +103,11 @@ type ResolvedAddon = {
     lockedValue: SvrOptionValue | null
     followed: string | null
     overridden: boolean
+    // Set on a match-mode option the shopper is picking for themselves because
+    // the main option it matches has not been chosen yet: the name of that main
+    // option, so the row can say it will take that choice over once it is made.
+    matchesLater: string | null
   }>
-  // Names of the main product's options this add-on follows that have not been
-  // chosen yet. While any are outstanding the add-on's own choices are held
-  // shut: picking a colour to go with a desk nobody has configured yet only
-  // gets quietly overwritten later.
-  blockedBy: string[]
   // Whether the mapping machinery could place every match-mode option (false =
   // unavailable for the current main configuration).
   available: boolean
@@ -141,13 +140,6 @@ const PLAIN_VARIANT_SHELL: Omit<VariantSelectorVariant, 'childProductId' | 'pric
   stockCount: null,
   sku: null,
   supplier: null,
-}
-
-// "Frame Colour", "Frame Colour and Size", "Frame Colour, Size and Depth" - a
-// sentence a shopper reads, not a comma-separated list.
-function listPhrase(names: string[]): string {
-  if (names.length <= 1) return names[0] ?? 'options'
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
 // A swatch picture fetched in CORS mode, for the same reason the main product's
@@ -418,22 +410,12 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
 
     const selection: OptionSelection = {}
     const shown: ResolvedAddon['shown'] = []
-    const blockedBy: string[] = []
     const lockedOptionIds: string[] = []
     let available = resolved !== null
     let unavailableReason: string | null = resolved === null ? 'Not available at the moment' : null
 
     if (resolved) {
       const mapped = new Map(resolved.map((r) => [r.addonOption.id, r]))
-      // Every main option this add-on takes a lead from that is still unchosen.
-      // Both following modes count: a match has nothing to lock to, and a
-      // default has nothing to default TO - a pick made now would be silently
-      // replaced the moment the main option is settled.
-      for (const r of resolved) {
-        if (r.mapping.mode !== 'match' && r.mapping.mode !== 'default') continue
-        if (!r.mainOption || parentSelection[r.mainOption.id]) continue
-        if (!blockedBy.includes(r.mainOption.name)) blockedBy.push(r.mainOption.name)
-      }
       for (const option of addon.selector.options) {
         const r = mapped.get(option.id)
         const mode = r?.mapping.mode
@@ -447,6 +429,19 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             // configuration.
             available = false
             unavailableReason = `Not available for the chosen ${r?.mainOption?.name.toLowerCase() ?? 'configuration'}`
+          } else if (r?.mainOption) {
+            // Nothing to match yet - the main option is still unchosen. The
+            // shopper picks it themselves rather than being sent back up the
+            // page: an accessory is a product in its own right, and somebody who
+            // only wants the pedestal should be able to buy the pedestal. The
+            // row says the main choice will take it over, and it does: the
+            // moment the main option is settled the match locks as usual.
+            const chosen = state.chosen[option.id] ?? null
+            if (chosen) selection[option.id] = chosen
+            shown.push({
+              option, mode: 'choose', valueId: chosen, locked: null, lockedValue: null,
+              followed: null, overridden: false, matchesLater: r.mainOption.name,
+            })
           }
           continue
         }
@@ -461,13 +456,13 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
           const overridden = !!state.overridden[option.id] && (state.chosen[option.id] ?? null) !== followed
           const chosen = overridden ? state.chosen[option.id] ?? null : followed
           if (chosen) selection[option.id] = chosen
-          shown.push({ option, mode, valueId: chosen, locked: null, lockedValue: null, followed, overridden })
+          shown.push({ option, mode, valueId: chosen, locked: null, lockedValue: null, followed, overridden, matchesLater: null })
           continue
         }
         // choose (explicit or unmapped): the shopper's pick.
         const chosen = state.chosen[option.id] ?? null
         if (chosen) selection[option.id] = chosen
-        shown.push({ option, mode: 'choose', valueId: chosen, locked: null, lockedValue: null, followed: null, overridden: false })
+        shown.push({ option, mode: 'choose', valueId: chosen, locked: null, lockedValue: null, followed: null, overridden: false, matchesLater: null })
       }
       // Options the shopper does not choose but should still SEE, listed after
       // resolution so a matched width reads "matches your desk". A fixed value
@@ -478,13 +473,13 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         if (r.mapping.mode === 'match') {
           shown.unshift({
             option: r.addonOption, mode: 'choose', valueId: null, followed: null, overridden: false,
-            lockedValue: r.value,
+            lockedValue: r.value, matchesLater: null,
             locked: `${r.value.label} - matches your ${r.mainOption?.name.toLowerCase() ?? 'choice'}`,
           })
         } else if (r.mapping.mode === 'fixed') {
           shown.unshift({
             option: r.addonOption, mode: 'choose', valueId: null, followed: null, overridden: false,
-            lockedValue: r.value,
+            lockedValue: r.value, matchesLater: null,
             locked: r.value.label,
           })
         }
@@ -515,7 +510,6 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       settled: selection,
       lockedOptionIds,
       shown,
-      blockedBy,
       available,
       unavailableReason: available ? null : unavailableReason,
       variant,
@@ -684,7 +678,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     setStates((prev) => ({ ...prev, [linkId]: { ...stateFor(linkId), ...patch } }))
   }
 
-  function renderOptionPicker(r: ResolvedAddon, entry: ResolvedAddon['shown'][number], blocked: boolean) {
+  function renderOptionPicker(r: ResolvedAddon, entry: ResolvedAddon['shown'][number]) {
     const { option, mode, valueId } = entry
     if (entry.locked) {
       // A colour or picture option shows the swatch it settled on, with the same
@@ -758,7 +752,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             // shut regardless, so a sold-out combination can be looked at and
             // never bought.
             const outOfStock = isValueOutOfStock(r.addon.selector, constraints, option.id, value.id)
-            const unpickable = preview || blocked || (outOfStock && !payload.staffView)
+            const unpickable = preview || (outOfStock && !payload.staffView)
             const valueLabel = outOfStock ? `${value.label} - out of stock` : value.label
             const pick = () =>
               setState(r.addon.linkId, {
@@ -810,9 +804,16 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             )
           })}
         </div>
+        {/* Clears the floated option name so the sentence sits under the
+            choices rather than beside their label. */}
+        {entry.matchesLater && (
+          <p className="pad-hint pad-hint-opt">
+            Pick one now, or choose your {entry.matchesLater.toLowerCase()} above and it will match that.
+          </p>
+        )}
         {(mode === 'default' || mode === 'recommend') && entry.overridden && (
           <button
-            type="button" className="pad-reset" disabled={preview || blocked}
+            type="button" className="pad-reset" disabled={preview}
             onClick={() => setState(r.addon.linkId, { overridden: { ...r.state.overridden, [option.id]: false } })}
           >
             {mode === 'default' ? 'Match my choice again' : 'Back to the recommendation'}
@@ -824,7 +825,6 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
 
   function renderAddonRow(r: ResolvedAddon & { depth: number; parent: ResolvedAddon | null }, index: number) {
     const { addon, state } = r
-    const blocked = r.blockedBy.length > 0
     const price = r.variant ? r.variant.price * r.perUnitQty : null
     const from = fromPrice(addon.selector)
     const qtyOverridden = r.recommendedPerUnit != null && state.qty != null && state.qty !== r.recommendedPerUnit
@@ -902,24 +902,42 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         )}
         {state.enabled && r.available && (
           <div className="pad-body">
-            {/* Nothing here can be settled until the main product's own choices
-                are: the pickers stay visible so the shopper can see what is
-                coming, but they are held shut until then. */}
-            {blocked && (
-              <p className="pad-hint">Choose your {listPhrase(r.blockedBy)} above first.</p>
-            )}
-            {r.shown.map((entry) => renderOptionPicker(r, entry, blocked))}
+            {/* An add-on stands on its own: everything here is pickable whether
+                or not the main product has been configured yet. An option that
+                would normally match the main product simply becomes the
+                shopper's own choice until there is something to match - see
+                resolveAddon. */}
+            {r.shown.map((entry) => renderOptionPicker(r, entry))}
             <div className="pad-qty">
               <span className="pad-optname">Quantity</span>
-              {/* Quantity input + the add-on's own add button, deliberately the
-                  same shapes as the main product's purchase row (shop-variations'
-                  add-to-cart part) so the two read as one system. */}
+              {/* Quantity stepper + the add-on's own add button, deliberately the
+                  same shapes as the main product's purchase row (shop's
+                  `.spd-stepper` pill, drawn by shop-variations' purchase slot) so
+                  the two read as one system: minus, a typed count, plus. A plain
+                  number box with the browser's own arrows was the odd one out on
+                  the page. Same markup and the same behaviour - a text input in
+                  numeric mode rather than type=number, digits filtered on the way
+                  in, and minus held shut at one. */}
               <div className="pad-buyrow">
-                <input
-                  type="number" min={1} value={r.perUnitQty} aria-label={`Quantity of ${addon.name}`}
-                  className="pad-qtyinput" disabled={preview || blocked}
-                  onChange={(e) => setState(addon.linkId, { qty: Math.max(1, Number(e.target.value) || 1) })}
-                />
+                <div className="pad-stepper" role="group" aria-label={`Quantity of ${addon.name}`}>
+                  <button
+                    type="button" aria-label="Decrease quantity" disabled={preview || r.perUnitQty <= 1}
+                    onClick={() => setState(addon.linkId, { qty: Math.max(1, r.perUnitQty - 1) })}
+                  >
+                    −
+                  </button>
+                  <input
+                    type="text" inputMode="numeric" value={r.perUnitQty} aria-label="Quantity"
+                    disabled={preview}
+                    onChange={(e) => setState(addon.linkId, { qty: Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1) })}
+                  />
+                  <button
+                    type="button" aria-label="Increase quantity" disabled={preview}
+                    onClick={() => setState(addon.linkId, { qty: r.perUnitQty + 1 })}
+                  >
+                    +
+                  </button>
+                </div>
                 <button
                   type="button" className="pad-addbtn"
                   disabled={preview || !r.variant || !r.variant.inStock}
@@ -933,12 +951,8 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                 <p className="pad-note">3D preview shows the standard arrangement.</p>
               )}
             </div>
-            {!blocked && !r.variant && r.selection == null && (
-              <p className="pad-hint">
-                {mainSelection?.allOptionsChosen === false && r.shown.length === 0
-                  ? 'Choose your options above first.'
-                  : 'Pick the options above to include it.'}
-              </p>
+            {!r.variant && r.selection == null && (
+              <p className="pad-hint">Pick the options above to include it.</p>
             )}
             {r.selection && !r.variant && <p className="pad-warn">That combination is not available.</p>}
             {/* An add-on that comes exactly one way has no combination to blame -
@@ -1066,15 +1080,27 @@ const PAD_BOX_CSS = `
 .pad-swatch.pad-oos{opacity:0.45}
 .pad-reset{clear:left;display:block;justify-self:start;background:none;border:none;color:var(--color-primary);cursor:pointer;font-size:0.75rem;padding:0.25rem 0 0}
 .pad-buyrow{display:flex;gap:0.75rem;align-items:center}
-/* Mirrors shop-variations' add-to-cart part: the same 64px numeric quantity
-   field and the same primary-filled button, so an add-on's purchase row reads
-   exactly like the main product's above it. */
-.pad-qtyinput{width:64px;padding:0.5rem;border-radius:6px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);font:inherit}
+/* The quantity pill, copied from shop's own .spd-stepper (modules/shop's
+   detail-parts buy CSS) so an add-on's purchase row reads exactly like the main
+   product's above it: same radius, same button widths, same centred bold count.
+   The one deliberate difference is the height - stretched to the add button
+   beside it rather than pinned at shop's 52px, because an add-on row's button is
+   the smaller of the two and a fixed height would leave the pill standing proud
+   of it. The !important on hover is shop's too, and for the same reason: the
+   site's Styles > Buttons settings emit a blanket button:hover fill carrying an
+   !important of its own. */
+.pad-stepper{display:inline-flex;align-items:stretch;align-self:stretch;border:1px solid var(--color-border);border-radius:9999px;overflow:hidden;background:var(--color-surface)}
+.pad-stepper button{width:46px;border:none;background:transparent;color:var(--color-primary);font-size:20px;font-weight:600;line-height:1;cursor:pointer;transition:background .12s ease}
+.pad-stepper button:hover:not(:disabled){background:var(--color-bg-subtle) !important;color:var(--color-primary) !important}
+.pad-stepper button:disabled{color:var(--color-border);cursor:not-allowed}
+.pad-stepper input{width:52px;border:none;text-align:center;font:inherit;font-weight:600;background:transparent;color:var(--color-text)}
+.pad-stepper input:focus{outline:none}
 /* The pill radius shop's own .spd-add wears, so the add-on's add button is the
    same shape as the Add to basket button above it rather than a squarer cousin. */
 .pad-addbtn{flex:1;background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:9999px;padding:0.75rem 1.25rem;font:inherit;font-weight:600;cursor:pointer}
 .pad-addbtn:disabled{background:var(--color-bg-subtle);color:var(--color-text-muted);cursor:not-allowed}
 .pad-note,.pad-hint{margin:0;font-size:0.75rem;color:var(--color-text-muted)}
+.pad-hint-opt{clear:both;padding-top:0.25rem}
 .pad-warn{margin:0;font-size:0.8125rem;color:var(--color-danger)}
 .pad-child{border-top-style:dashed}
 `
