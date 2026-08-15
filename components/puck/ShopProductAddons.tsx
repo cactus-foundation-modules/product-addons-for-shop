@@ -35,13 +35,23 @@ const SAMPLE: PadBoxPayload = {
   ],
 }
 
-export function ShopProductAddonsEditor() {
-  return <AddonsBox payload={SAMPLE} preview />
+export type ShopProductAddonsProps = {
+  // Blank keeps the heading the module's own settings supply (the add-on noun),
+  // which is what the box has always printed. A shop calling them Accessories
+  // everywhere but Goes well with here could not say so before.
+  heading?: string
+}
+
+export function ShopProductAddonsEditor(props: ShopProductAddonsProps) {
+  const payload = props.heading?.trim() ? { ...SAMPLE, nounPlural: props.heading.trim() } : SAMPLE
+  return <AddonsBox payload={payload} preview />
 }
 
 export const shopProductAddonsPuckComponent = {
   label: 'Shop: Product add-ons',
-  fields: {},
-  defaultProps: {},
+  fields: {
+    heading: { type: 'text' as const, label: 'Heading (blank uses the name from Add-ons settings)' },
+  },
+  defaultProps: { heading: '' } as ShopProductAddonsProps,
   render: ShopProductAddonsEditor,
 }
