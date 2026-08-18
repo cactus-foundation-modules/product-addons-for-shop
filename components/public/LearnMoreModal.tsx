@@ -65,6 +65,12 @@ export function LearnMoreModal({ slug, name, onClose }: { slug: string; name: st
           />
         </div>
         <div className="padlm-foot">
+          {/* A new tab rather than this one: the shopper is mid-configure on the
+              parent product, and taking the page away from them to show an
+              add-on would lose that. */}
+          <a className="padlm-view" href={`/shop/products/${encodeURIComponent(slug)}`} target="_blank" rel="noopener noreferrer">
+            View product
+          </a>
           <button type="button" className="padlm-done" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -93,7 +99,11 @@ const CSS = `
 /* A shopper who has asked for less movement still gets an answer, just a still
    one - the wording carries it on its own. */
 @media (prefers-reduced-motion:reduce){.padlm-spinner{animation:none}.padlm-frame{transition:none}}
-.padlm-foot{display:flex;justify-content:center;padding:0.75rem 1rem;border-top:1px solid var(--color-border)}
+.padlm-foot{display:flex;justify-content:center;align-items:center;gap:0.625rem;flex-wrap:wrap;padding:0.75rem 1rem;border-top:1px solid var(--color-border)}
 .padlm-done{background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:8px;padding:0.625rem 2.5rem;font:inherit;font-weight:600;cursor:pointer}
+/* Outlined rather than filled: the pair reads as one primary action and one
+   way out, not as two things competing for the same click. */
+.padlm-view{background:transparent;color:var(--color-text);border:1px solid var(--color-border);border-radius:8px;padding:0.625rem 1.75rem;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+.padlm-view:hover{border-color:var(--color-primary);color:var(--color-primary)}
 @media (max-width:640px){.padlm-wrap{padding:0}.padlm-panel{width:100%;height:100%;border-radius:0}}
 `
