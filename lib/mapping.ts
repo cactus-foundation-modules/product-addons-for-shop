@@ -4,7 +4,7 @@
 // selector payloads both sides already hold.
 
 import type { SvrOptionWithValues, SvrOptionValue } from '@/modules/shop-variations/lib/types'
-import type { PadOptionMapping, PadQuantityRule } from '@/modules/product-addons-for-shop/lib/types'
+import type { PadOptionMapping, PadQuantityRule, PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
 
 const norm = (s: string) => s.trim().toLowerCase()
 
@@ -43,6 +43,40 @@ export function mapValue(
   if (bySlug) return bySlug
   const byLabel = addonOption.values.find((v) => norm(v.label) === norm(mainValue.label))
   return byLabel ?? null
+}
+
+/**
+ * Whether the add-on applies to the main product AS CURRENTLY CONFIGURED.
+ *
+ * Every rule has to pass (they describe separate facts about the desk), and any
+ * one of a rule's listed values passes it. An unfinished rule - one nobody has
+ * ticked a value on yet - is ignored, so half-filling the editor never empties
+ * the page.
+ *
+ * Two deliberate falses:
+ *   - the driving option is UNCHOSEN. The rule exists because the answer
+ *     matters, so "not answered yet" is not "offer it anyway"; the add-on
+ *     appears the moment the choice lands on a listed value.
+ *   - the named option no longer EXISTS on the main product (a rename, a sheet
+ *     re-import). The condition cannot be tested, and offering an accessory
+ *     that may not fit is the very failure the rule was written to prevent, so
+ *     it stays hidden and the admin coverage check says so out loud.
+ */
+export function isAddonApplicable(
+  rules: PadShowWhenRule[] | undefined,
+  mainOptions: SvrOptionWithValues[],
+  mainSelection: Record<string, string>,
+): boolean {
+  for (const rule of rules ?? []) {
+    const wanted = (rule.valueSlugs ?? []).filter((slug) => slug.trim() !== '')
+    if (wanted.length === 0) continue
+    const option = findOptionByName(mainOptions, rule.mainOption)
+    if (!option) return false
+    const chosenId = mainSelection[option.id]
+    const chosen = chosenId ? option.values.find((v) => v.id === chosenId) : undefined
+    if (!chosen || !wanted.includes(chosen.slug)) return false
+  }
+  return true
 }
 
 export type ResolvedMapping = {

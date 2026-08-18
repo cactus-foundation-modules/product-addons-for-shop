@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composeContextKey } from '@/modules/product-addons-for-shop/lib/mapping'
+import { composeContextKey, isAddonApplicable } from '@/modules/product-addons-for-shop/lib/mapping'
 import type { SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
 
 // The 3D context key an add-on announces. The case this was written for is a
@@ -45,5 +45,61 @@ describe('composeContextKey', () => {
   it('reduces a value to what a context key may hold', () => {
     const odd = [{ id: 'width', name: 'Width', values: [value('w1', 'Two Drawer / Deep', 'Two Drawer / Deep')] }] as unknown as SvrOptionWithValues[]
     expect(composeContextKey('ped', ['Width'], odd, { width: 'w1' })).toBe('ped-two-drawer-deep')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Visibility conditions. Written for the desk sold with OR without cable ports:
+// the power module that drops into a port must not be offered on the version
+// that has none.
+// ---------------------------------------------------------------------------
+
+const MAIN: SvrOptionWithValues[] = [
+  {
+    id: 'ports',
+    name: 'Cable Port',
+    values: [value('p-no', 'without-cable-ports', 'Without cable ports'), value('p-yes', 'with-cable-ports', 'With cable ports')],
+  },
+  { id: 'depth', name: 'Depth', values: [value('d60', '60cm', '60cm'), value('d80', '80cm', '80cm')] },
+] as unknown as SvrOptionWithValues[]
+
+const PORTS_ONLY = [{ mainOption: 'Cable Port', valueSlugs: ['with-cable-ports'] }]
+
+describe('isAddonApplicable', () => {
+  it('offers an add-on with no conditions whatever is chosen', () => {
+    expect(isAddonApplicable(undefined, MAIN, {})).toBe(true)
+    expect(isAddonApplicable([], MAIN, { ports: 'p-no' })).toBe(true)
+  })
+
+  it('offers it only on a listed value', () => {
+    expect(isAddonApplicable(PORTS_ONLY, MAIN, { ports: 'p-yes' })).toBe(true)
+    expect(isAddonApplicable(PORTS_ONLY, MAIN, { ports: 'p-no' })).toBe(false)
+  })
+
+  it('holds it back until the driving option is chosen', () => {
+    expect(isAddonApplicable(PORTS_ONLY, MAIN, {})).toBe(false)
+    expect(isAddonApplicable(PORTS_ONLY, MAIN, { depth: 'd60' })).toBe(false)
+  })
+
+  it('matches the option by name, case and spacing aside', () => {
+    expect(isAddonApplicable([{ mainOption: ' cable port ', valueSlugs: ['with-cable-ports'] }], MAIN, { ports: 'p-yes' })).toBe(true)
+  })
+
+  it('ignores a condition nobody has ticked a value on', () => {
+    expect(isAddonApplicable([{ mainOption: 'Cable Port', valueSlugs: [] }], MAIN, { ports: 'p-no' })).toBe(true)
+    expect(isAddonApplicable([{ mainOption: 'Cable Port', valueSlugs: ['  '] }], MAIN, { ports: 'p-no' })).toBe(true)
+  })
+
+  it('holds it back when the named option has gone, rather than guessing yes', () => {
+    expect(isAddonApplicable([{ mainOption: 'Cable Ports', valueSlugs: ['with-cable-ports'] }], MAIN, { ports: 'p-yes' })).toBe(false)
+  })
+
+  it('passes any one of a rule’s values, and every rule', () => {
+    const either = [{ mainOption: 'Depth', valueSlugs: ['60cm', '80cm'] }]
+    expect(isAddonApplicable(either, MAIN, { depth: 'd80' })).toBe(true)
+    const both = [...PORTS_ONLY, ...either]
+    expect(isAddonApplicable(both, MAIN, { ports: 'p-yes', depth: 'd60' })).toBe(true)
+    expect(isAddonApplicable(both, MAIN, { ports: 'p-no', depth: 'd60' })).toBe(false)
+    expect(isAddonApplicable(both, MAIN, { ports: 'p-yes' })).toBe(false)
   })
 })

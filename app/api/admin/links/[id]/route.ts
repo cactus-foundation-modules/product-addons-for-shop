@@ -19,6 +19,14 @@ const QuantitySchema = z.object({
   note: z.string().trim().max(200).optional(),
 })
 
+// Values may be empty - the editor shows a rule the moment an option is picked,
+// before any of its values are ticked, and an unfinished rule is ignored by the
+// storefront rather than hiding the add-on everywhere.
+const ShowWhenSchema = z.object({
+  mainOption: z.string().trim().min(1),
+  valueSlugs: z.array(z.string().trim().min(1)),
+})
+
 const PatchBody = z.object({
   enabled: z.boolean().optional(),
   position: z.number().int().min(0).optional(),
@@ -28,6 +36,7 @@ const PatchBody = z.object({
     optionMappings: z.array(MappingSchema),
     quantity: QuantitySchema,
     modelContextOptions: z.array(z.string().trim().min(1)).max(4).optional(),
+    showWhen: z.array(ShowWhenSchema).max(8).optional(),
   }).optional(),
 })
 

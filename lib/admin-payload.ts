@@ -149,6 +149,26 @@ async function buildLinkView(link: PadLink, mainOptions: SvrOptionWithValues[]):
     }
   }
 
+  // Visibility conditions: an option that has gone means the add-on is offered
+  // NOWHERE (the storefront cannot test a condition it cannot find, and guessing
+  // yes is the failure the condition was written to prevent), so it is said in
+  // as many words rather than left to be discovered as a missing accessory.
+  for (const rule of link.config.showWhen ?? []) {
+    const mainOption = findOptionByName(mainOptions, rule.mainOption)
+    if (!mainOption) {
+      warnings.push(`The condition on "${rule.mainOption}" points at an option this product no longer has, so the add-on is not being offered at all.`)
+      continue
+    }
+    const known = new Set(mainOption.values.map((v) => v.slug))
+    const gone = (rule.valueSlugs ?? []).filter((slug) => !known.has(slug))
+    if (gone.length > 0) {
+      warnings.push(`The condition on "${mainOption.name}" names ${gone.length === 1 ? 'a choice' : 'choices'} that no longer exist: ${gone.join(', ')}.`)
+    }
+    if ((rule.valueSlugs ?? []).length === 0) {
+      warnings.push(`The condition on "${mainOption.name}" has no choices ticked, so it is being ignored - the add-on is offered whatever is picked.`)
+    }
+  }
+
   for (const name of link.config.modelContextOptions ?? []) {
     if (!findOptionByName(addonOptions, name)) {
       warnings.push(`The 3D context key follows "${name}", which is not an option on the linked product - the combined model will not be shown until that is put right.`)

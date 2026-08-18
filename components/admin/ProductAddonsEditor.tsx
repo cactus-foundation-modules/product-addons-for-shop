@@ -7,7 +7,7 @@
 // re-fetched after every write so the warnings always describe what is saved.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AdminOption, AdminSectionPayload } from '@/modules/product-addons-for-shop/lib/admin-payload'
-import type { PadLinkConfig, PadOptionMapping } from '@/modules/product-addons-for-shop/lib/types'
+import type { PadLinkConfig, PadOptionMapping, PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
 
 const API = '/api/m/product-addons-for-shop/admin'
 
@@ -194,6 +194,24 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
     patchConfig({ ...config, optionMappings: [...rest, next] })
   }
 
+  function setShowWhen(index: number, patch: Partial<PadShowWhenRule>) {
+    const rules = [...(config.showWhen ?? [])]
+    const current = rules[index]
+    if (!current) return
+    rules[index] = { ...current, ...patch }
+    patchConfig({ ...config, showWhen: rules })
+  }
+
+  function addShowWhen() {
+    const first = mainOptions[0]
+    if (!first) return
+    patchConfig({ ...config, showWhen: [...(config.showWhen ?? []), { mainOption: first.name, valueSlugs: [] }] })
+  }
+
+  function removeShowWhen(index: number) {
+    patchConfig({ ...config, showWhen: (config.showWhen ?? []).filter((_, i) => i !== index) })
+  }
+
   const quantity = config.quantity
   const perOption = mainOptions.find((o) => o.name === quantity.perOption)
 
@@ -298,6 +316,65 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
             </div>
           )
         })}
+      </div>
+
+      <div style={{ display: 'grid', gap: '0.375rem' }}>
+        <span style={label}>When to offer it</span>
+        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          Leave this alone and the add-on is offered on this product however it is configured. Add a
+          condition and it only appears once the shopper has picked one of the values you tick - a
+          power module is no use on a desk ordered without cable ports, so it stays off the page there.
+        </p>
+        {(config.showWhen ?? []).map((rule, ruleIndex) => {
+          const ruleOption = mainOptions.find((o) => o.name === rule.mainOption)
+          return (
+            <div key={ruleIndex} style={{ display: 'grid', gap: '0.375rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--color-border)' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.8125rem' }}>
+                <span>Only when</span>
+                <select
+                  style={field} value={rule.mainOption}
+                  onChange={(e) => setShowWhen(ruleIndex, { mainOption: e.target.value, valueSlugs: [] })}
+                >
+                  {mainOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
+                </select>
+                <span>is</span>
+                <button
+                  type="button" style={{ ...btn, marginLeft: 'auto', color: 'var(--color-danger)' }}
+                  onClick={() => removeShowWhen(ruleIndex)}
+                >
+                  Remove condition
+                </button>
+              </div>
+              {ruleOption ? (
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {ruleOption.values.map((v) => (
+                    <label key={v.slug} style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={rule.valueSlugs.includes(v.slug)}
+                        onChange={(e) => setShowWhen(ruleIndex, {
+                          valueSlugs: e.target.checked
+                            ? [...rule.valueSlugs, v.slug]
+                            : rule.valueSlugs.filter((slug) => slug !== v.slug),
+                        })}
+                      />
+                      {v.label}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
+                  &ldquo;{rule.mainOption}&rdquo; is not an option on this product any more, so the add-on is not being offered at all. Pick another, or remove the condition.
+                </span>
+              )}
+            </div>
+          )
+        })}
+        {mainOptions.length > 0 && (
+          <div>
+            <button type="button" style={btn} onClick={addShowWhen}>Add a condition</button>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gap: '0.375rem' }}>

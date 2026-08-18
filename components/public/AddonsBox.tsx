@@ -36,6 +36,7 @@ import {
   composeContextKey,
   deterministicGroupKey,
   findOptionByName,
+  isAddonApplicable,
   recommendationNote,
   recommendedQuantityPerUnit,
   resolveMappings,
@@ -520,8 +521,16 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     }
   }
 
+  // Add-ons whose visibility rules do not apply to the configuration in front
+  // of the shopper are not resolved, not rendered, and so cannot be bought: a
+  // power module has nothing to sit in on a desk ordered without cable ports.
+  // The tick state of a hidden row is left alone rather than cleared - flipping
+  // back to the choice that suits it should find it as it was left, and nothing
+  // hidden can reach the basket in the meantime.
   const resolvedTop = useMemo(
-    () => payload.addons.map((addon) => resolveAddon(addon, payload.mainOptions, mainSelectionMap)),
+    () => payload.addons
+      .filter((addon) => isAddonApplicable(addon.config.showWhen, payload.mainOptions, mainSelectionMap))
+      .map((addon) => resolveAddon(addon, payload.mainOptions, mainSelectionMap)),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resolveAddon reads only states/payload/mainSelectionMap, all listed
     [payload, states, mainSelectionMap],
   )
@@ -535,7 +544,11 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       for (const r of list) {
         out.push({ ...r, depth, parent })
         if (r.state.enabled && r.selection && r.addon.children.length > 0) {
-          const children = r.addon.children.map((child) => resolveAddon(child, r.addon.selector.options, r.selection!))
+          // A chained accessory's rules read its OWN parent's options - the
+          // add-on it hangs off is the "main product" one level down.
+          const children = r.addon.children
+            .filter((child) => isAddonApplicable(child.config.showWhen, r.addon.selector.options, r.selection!))
+            .map((child) => resolveAddon(child, r.addon.selector.options, r.selection!))
           walk(children, depth + 1, r)
         }
       }
@@ -966,7 +979,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     )
   }
 
-  if (payload.addons.length === 0) return null
+  // Nothing to offer, or nothing that applies to the configuration in front of
+  // the shopper: no box at all rather than a heading over an empty space.
+  if (payload.addons.length === 0 || resolvedAll.length === 0) return null
 
   // Configuring an add-on is still configuring the purchase, so the phone's
   // pinned gallery strip stays up while the shopper is in here rather than

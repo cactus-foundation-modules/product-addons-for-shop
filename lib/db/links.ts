@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/db/prisma'
-import type { PadLink, PadLinkConfig } from '@/modules/product-addons-for-shop/lib/types'
+import type { PadLink, PadLinkConfig, PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
 
 // $queryRaw against pad_links, matching the raw-SQL data layers of the other
 // shop companions. Config is stored as jsonb and parsed defensively: a corrupt
@@ -31,7 +31,27 @@ function parseConfig(raw: unknown): PadLinkConfig {
     ...(Array.isArray(cfg.modelContextOptions)
       ? { modelContextOptions: cfg.modelContextOptions.filter((n): n is string => typeof n === 'string' && n.trim() !== '') }
       : {}),
+    ...(Array.isArray(cfg.showWhen) ? { showWhen: parseShowWhen(cfg.showWhen) } : {}),
   }
+}
+
+// A visibility rule is only worth keeping if it names an option; the values are
+// allowed to be empty (an unfinished rule the editor still shows, which the
+// storefront ignores) but must be strings, since they are compared to slugs.
+function parseShowWhen(raw: unknown[]): PadShowWhenRule[] {
+  const out: PadShowWhenRule[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const rule = entry as Partial<PadShowWhenRule>
+    if (typeof rule.mainOption !== 'string' || rule.mainOption.trim() === '') continue
+    out.push({
+      mainOption: rule.mainOption,
+      valueSlugs: Array.isArray(rule.valueSlugs)
+        ? rule.valueSlugs.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+        : [],
+    })
+  }
+  return out
 }
 
 function toLink(row: Row): PadLink {

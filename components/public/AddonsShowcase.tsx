@@ -10,6 +10,14 @@ import { useEffect, useMemo, useState } from 'react'
 // without dragging prisma into the page builder's bundle.
 import { DEFAULT_BREAKPOINTS, type Breakpoints } from '@/modules/shop/lib/breakpoints-shared'
 import { focusAddon } from '@/modules/product-addons-for-shop/lib/accessory-focus'
+import { isAddonApplicable } from '@/modules/product-addons-for-shop/lib/mapping'
+import type { PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
+import {
+  VARIANT_SELECTION_EVENT,
+  getVariantSelection,
+  type VariantSelectionDetail,
+} from '@/modules/shop-variations/lib/selection-broadcast'
+import type { SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
 import { LearnMoreModal } from '@/modules/product-addons-for-shop/components/public/LearnMoreModal'
 import {
   AddonImageModal,
@@ -42,6 +50,12 @@ export type ShowcaseCard = {
   // simply has no badge, as it always did.
   outOfStock?: boolean
   fromPriceFormatted: string
+  // The conditions on the MAIN product that have to hold before this accessory
+  // is applicable at all - the same rules the purchase box gates on, so a
+  // shopper is never shown a card here for something the box below refuses to
+  // offer. Optional because this payload crosses to the browser as JSON: one
+  // serialised before this shipped simply has no conditions, as it always did.
+  showWhen?: PadShowWhenRule[]
 }
 
 export type ShowcasePayload = {
@@ -56,6 +70,10 @@ export type ShowcasePayload = {
   // back to the defaults, which are the values a site gets until it changes
   // them anyway.
   breakpoints?: Breakpoints
+  // The main product's own options, so a card's conditions can be tested here
+  // against the shopper's live choices. Optional for the same reason as the
+  // rest: without it no card carries conditions worth testing either.
+  mainOptions?: SvrOptionWithValues[]
 }
 
 export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload; preview?: boolean }) {
@@ -66,6 +84,10 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
   // was ever opened), event afterwards. Nothing heard = the server's listing
   // pictures stand, which is what a page without the box block gets.
   const [live, setLive] = useState<Record<string, string[]>>({})
+  // The main product's live choices, for the cards that only apply to some of
+  // them. Same snapshot-then-event read the box uses, so both surfaces answer
+  // to one broadcast rather than each guessing.
+  const [mainSelection, setMainSelection] = useState<VariantSelectionDetail | null>(null)
   const css = useMemo(() => showcaseCss(payload.breakpoints ?? DEFAULT_BREAKPOINTS), [payload.breakpoints])
 
   useEffect(() => {
@@ -79,6 +101,46 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
     return () => window.removeEventListener(ADDON_IMAGES_EVENT, onImages)
   }, [preview])
 
+  // Only worth listening at all where some card actually carries conditions;
+  // a showcase of unconditional accessories does no work for this.
+  const gated = (payload.cards ?? []).some((card) => (card.showWhen ?? []).length > 0)
+  useEffect(() => {
+    if (preview || !gated) return
+    const initial = getVariantSelection()
+    if (initial) queueMicrotask(() => setMainSelection((current) => current ?? initial))
+    const onChange = (e: Event) => setMainSelection((e as CustomEvent<VariantSelectionDetail>).detail)
+    window.addEventListener(VARIANT_SELECTION_EVENT, onChange)
+    return () => window.removeEventListener(VARIANT_SELECTION_EVENT, onChange)
+  }, [preview, gated])
+
+  // The broadcast as option id -> value id, exactly as the box builds it: each
+  // chosen value id belongs to one option, so order does not come into it.
+  const mainSelectionMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    const options = payload.mainOptions ?? []
+    if (!mainSelection || options.length === 0) return map
+    const valueToOption = new Map<string, string>()
+    for (const option of options) {
+      for (const value of option.values) valueToOption.set(value.id, option.id)
+    }
+    for (const valueId of mainSelection.chosenValueIds) {
+      const optionId = valueToOption.get(valueId)
+      if (optionId) map[optionId] = valueId
+    }
+    return map
+  }, [mainSelection, payload.mainOptions])
+
+  // A card whose conditions do not hold is not shown here either: the tab is
+  // the same offer as the box, and its Add button lands in a box that would
+  // refuse it. The page builder's preview shows the lot - an editor needs to
+  // see what they are arranging, conditions and all.
+  const cards = useMemo(
+    () => (preview
+      ? payload.cards
+      : payload.cards.filter((card) => isAddonApplicable(card.showWhen, payload.mainOptions ?? [], mainSelectionMap))),
+    [preview, payload.cards, payload.mainOptions, mainSelectionMap],
+  )
+
   function onAdd(card: ShowcaseCard) {
     if (preview) return
     focusAddon(card.linkId)
@@ -89,7 +151,7 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
     document.getElementById('spd-buy')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  if (payload.cards.length === 0) return null
+  if (cards.length === 0) return null
 
   return (
     <div className="pads-wrap">
@@ -98,8 +160,8 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
           layout that has gone wrong rather than as one card, so on anything
           wider than a phone it takes a card's width and sits in the middle. A
           phone has room for one card and nothing else, so it is left alone. */}
-      <ul className={`pads-grid${payload.cards.length === 1 ? ' pads-one' : ''}`}>
-        {payload.cards.map((card) => {
+      <ul className={`pads-grid${cards.length === 1 ? ' pads-one' : ''}`}>
+        {cards.map((card) => {
           // The variation the box has settled this add-on on, when there is a
           // box on the page saying so; the listing's own pictures otherwise.
           // Same ordering rule the box's own gallery uses - the variation's

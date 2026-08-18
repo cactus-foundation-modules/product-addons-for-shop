@@ -54,6 +54,24 @@ export type PadQuantityRule = {
   note?: string
 }
 
+// A condition on the MAIN product's options that has to hold before the add-on
+// is offered at all. A desk sold with OR without cable ports has nothing to put
+// a power module into when the shopper picks "without": the module is not the
+// wrong colour there, it is not applicable, and an accessory that cannot be
+// used should not be on the page tempting anyone.
+//
+// This is deliberately not another mapping mode. A mapping decides what an
+// add-on's own option settles on once the add-on is being offered; this decides
+// whether it is offered, which is a question about the main product alone.
+export type PadShowWhenRule = {
+  // The main product's option, by NAME (as everywhere else in this config).
+  mainOption: string
+  // The value SLUGS on that option that make the add-on applicable. Empty means
+  // the rule was never finished in the editor, and it is ignored rather than
+  // quietly hiding the add-on everywhere.
+  valueSlugs: string[]
+}
+
 export type PadLinkConfig = {
   optionMappings: PadOptionMapping[]
   quantity: PadQuantityRule
@@ -67,6 +85,14 @@ export type PadLinkConfig = {
   // stays exact-or-base at the far end: a width nobody has built a file for
   // falls back to the plain desk rather than showing the wrong size.
   modelContextOptions?: string[]
+  // Conditions on the main product's options that all have to pass before the
+  // add-on appears. Rules are ANDed; the values inside one rule are ORed.
+  //
+  // A rule whose option the shopper has not chosen yet does NOT pass: the
+  // add-on arrives the moment the choice lands on a listed value and not
+  // before, which is the whole point of asking. Absent (the usual case) means
+  // the add-on is offered on the listing unconditionally, exactly as before.
+  showWhen?: PadShowWhenRule[]
 }
 
 export type PadLink = {

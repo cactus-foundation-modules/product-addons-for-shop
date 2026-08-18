@@ -31,6 +31,10 @@ export async function buildShowcasePayload(productId: string): Promise<(Showcase
     surface: settings.showcaseSurface,
     nounPlural: box.nounPlural,
     breakpoints,
+    // Carried so the cards can answer to the shopper's live choices: an
+    // accessory that only applies to some configurations must not be offered
+    // here when the box below would not offer it.
+    mainOptions: box.mainOptions,
     cards: box.addons.map((addon) => {
       const from = fromPrice(addon)
       return {
@@ -45,6 +49,7 @@ export async function buildShowcasePayload(productId: string): Promise<(Showcase
         // Only ever true on a staff copy: the box payload this is built from has
         // already dropped the sold-out add-ons for everybody else.
         outOfStock: addon.outOfStock,
+        ...(addon.config.showWhen?.length ? { showWhen: addon.config.showWhen } : {}),
         fromPriceFormatted: Number.isFinite(from) ? `From ${config.currencySymbol}${from.toFixed(2)}${suffix}` : '',
       }
     }),
