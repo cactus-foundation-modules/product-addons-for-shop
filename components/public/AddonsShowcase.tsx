@@ -130,9 +130,9 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
     return map
   }, [mainSelection, payload.mainOptions])
 
-  // A card whose conditions do not hold is not shown here either: the tab is
-  // the same offer as the box, and its Add button lands in a box that would
-  // refuse it. The page builder's preview shows the lot - an editor needs to
+  // A card the shopper has ruled out is not shown here either: the tab is the
+  // same offer as the box, and its Add button lands in a box that would refuse
+  // it. The page builder's preview shows the lot - an editor needs to
   // see what they are arranging, conditions and all.
   const cards = useMemo(
     () => (preview

@@ -85,13 +85,14 @@ export type PadLinkConfig = {
   // stays exact-or-base at the far end: a width nobody has built a file for
   // falls back to the plain desk rather than showing the wrong size.
   modelContextOptions?: string[]
-  // Conditions on the main product's options that all have to pass before the
-  // add-on appears. Rules are ANDed; the values inside one rule are ORed.
+  // Conditions on the main product's options that all have to pass for the
+  // add-on to be offered. Rules are ANDed; the values inside one rule are ORed.
   //
-  // A rule whose option the shopper has not chosen yet does NOT pass: the
-  // add-on arrives the moment the choice lands on a listed value and not
-  // before, which is the whole point of asking. Absent (the usual case) means
-  // the add-on is offered on the listing unconditionally, exactly as before.
+  // Offered UNLESS RULED OUT: an accessory belongs on the page from the off,
+  // and a condition is there to take it away again when the shopper picks
+  // something it cannot work with. A rule whose option is still unchosen has
+  // ruled nothing out, so it passes. Absent (the usual case) means the add-on
+  // is offered unconditionally, exactly as before conditions existed.
   showWhen?: PadShowWhenRule[]
 }
 

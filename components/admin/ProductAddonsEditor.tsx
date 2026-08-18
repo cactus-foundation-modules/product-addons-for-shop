@@ -322,8 +322,9 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
         <span style={label}>When to offer it</span>
         <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
           Leave this alone and the add-on is offered on this product however it is configured. Add a
-          condition and it only appears once the shopper has picked one of the values you tick - a
-          power module is no use on a desk ordered without cable ports, so it stays off the page there.
+          condition and it is still offered from the off, but disappears the moment the shopper picks
+          a value you have not ticked - a power module is no use on a desk ordered without cable
+          ports, so it takes itself off the page there.
         </p>
         {(config.showWhen ?? []).map((rule, ruleIndex) => {
           const ruleOption = mainOptions.find((o) => o.name === rule.mainOption)

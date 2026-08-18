@@ -521,9 +521,10 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     }
   }
 
-  // Add-ons whose visibility rules do not apply to the configuration in front
-  // of the shopper are not resolved, not rendered, and so cannot be bought: a
-  // power module has nothing to sit in on a desk ordered without cable ports.
+  // Add-ons the shopper has ruled out are not resolved, not rendered, and so
+  // cannot be bought: a power module has nothing to sit in once the desk is
+  // configured without cable ports. Everything else is offered as usual,
+  // conditions unanswered included.
   // The tick state of a hidden row is left alone rather than cleared - flipping
   // back to the choice that suits it should find it as it was left, and nothing
   // hidden can reach the basket in the meantime.

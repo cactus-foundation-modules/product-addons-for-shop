@@ -48,19 +48,24 @@ export function mapValue(
 /**
  * Whether the add-on applies to the main product AS CURRENTLY CONFIGURED.
  *
- * Every rule has to pass (they describe separate facts about the desk), and any
- * one of a rule's listed values passes it. An unfinished rule - one nobody has
- * ticked a value on yet - is ignored, so half-filling the editor never empties
- * the page.
+ * The rule is **offered unless ruled out**. An accessory is a product in its own
+ * right and belongs on the page from the off; a condition exists to take it away
+ * again when the shopper picks something it cannot work with, not to make them
+ * earn it. So a rule passes until its option is settled on a value outside the
+ * listed set - a power module is on the desk page from the moment it loads, and
+ * leaves only when "Without cable ports" is chosen.
  *
- * Two deliberate falses:
- *   - the driving option is UNCHOSEN. The rule exists because the answer
- *     matters, so "not answered yet" is not "offer it anyway"; the add-on
- *     appears the moment the choice lands on a listed value.
- *   - the named option no longer EXISTS on the main product (a rename, a sheet
- *     re-import). The condition cannot be tested, and offering an accessory
- *     that may not fit is the very failure the rule was written to prevent, so
- *     it stays hidden and the admin coverage check says so out loud.
+ * Every rule has to pass (they describe separate facts about the product), and
+ * any one of a rule's listed values passes it. An unfinished rule - one nobody
+ * has ticked a value on yet - is ignored, so half-filling the editor never
+ * empties the page.
+ *
+ * The one deliberate false where nothing incompatible was picked: the named
+ * option no longer EXISTS on the main product (a rename, a sheet re-import).
+ * That is a broken config rather than a shopper's choice - the condition cannot
+ * be tested at all, and offering an accessory that may not fit is the very
+ * failure the rule was written to prevent - so it stays hidden and the admin
+ * coverage check says so out loud.
  */
 export function isAddonApplicable(
   rules: PadShowWhenRule[] | undefined,
@@ -74,7 +79,9 @@ export function isAddonApplicable(
     if (!option) return false
     const chosenId = mainSelection[option.id]
     const chosen = chosenId ? option.values.find((v) => v.id === chosenId) : undefined
-    if (!chosen || !wanted.includes(chosen.slug)) return false
+    // Nothing chosen yet rules nothing out.
+    if (!chosen) continue
+    if (!wanted.includes(chosen.slug)) return false
   }
   return true
 }

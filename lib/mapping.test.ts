@@ -76,9 +76,9 @@ describe('isAddonApplicable', () => {
     expect(isAddonApplicable(PORTS_ONLY, MAIN, { ports: 'p-no' })).toBe(false)
   })
 
-  it('holds it back until the driving option is chosen', () => {
-    expect(isAddonApplicable(PORTS_ONLY, MAIN, {})).toBe(false)
-    expect(isAddonApplicable(PORTS_ONLY, MAIN, { depth: 'd60' })).toBe(false)
+  it('offers it while the driving option is unchosen - nothing has been ruled out yet', () => {
+    expect(isAddonApplicable(PORTS_ONLY, MAIN, {})).toBe(true)
+    expect(isAddonApplicable(PORTS_ONLY, MAIN, { depth: 'd60' })).toBe(true)
   })
 
   it('matches the option by name, case and spacing aside', () => {
@@ -90,7 +90,7 @@ describe('isAddonApplicable', () => {
     expect(isAddonApplicable([{ mainOption: 'Cable Port', valueSlugs: ['  '] }], MAIN, { ports: 'p-no' })).toBe(true)
   })
 
-  it('holds it back when the named option has gone, rather than guessing yes', () => {
+  it('holds it back when the named option has gone - a broken condition, not a shopper’s choice', () => {
     expect(isAddonApplicable([{ mainOption: 'Cable Ports', valueSlugs: ['with-cable-ports'] }], MAIN, { ports: 'p-yes' })).toBe(false)
   })
 
@@ -100,6 +100,9 @@ describe('isAddonApplicable', () => {
     const both = [...PORTS_ONLY, ...either]
     expect(isAddonApplicable(both, MAIN, { ports: 'p-yes', depth: 'd60' })).toBe(true)
     expect(isAddonApplicable(both, MAIN, { ports: 'p-no', depth: 'd60' })).toBe(false)
-    expect(isAddonApplicable(both, MAIN, { ports: 'p-yes' })).toBe(false)
+    // Half-answered: the port rule passes, the depth rule has ruled nothing out.
+    expect(isAddonApplicable(both, MAIN, { ports: 'p-yes' })).toBe(true)
+    // One incompatible answer is enough, whatever the other rules say.
+    expect(isAddonApplicable(both, MAIN, { ports: 'p-no' })).toBe(false)
   })
 })
