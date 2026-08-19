@@ -137,6 +137,29 @@ export function availableAddonValues(
   return addonOption.values.filter((v) => isAddonValueAvailable(rules, addonOption.name, v.slug, mainOptions, mainSelection))
 }
 
+/**
+ * The single value an option has been NARROWED to, or null.
+ *
+ * A condition that leaves exactly one choice standing has not left a choice at
+ * all: on a 120cm corner desk the desk-high pedestal comes 60cm deep and that is
+ * the end of it, so asking the shopper to click the only answer is a step for the
+ * sake of a step. The box settles it and states it instead.
+ *
+ * Only ever true where a rule actually removed something. An option that has come
+ * with one value all along is left exactly as it was - that is how every add-on
+ * on the site behaves today, and it is not this rule's business to change it.
+ */
+export function narrowedToSingleValue(
+  rules: PadValueShowWhenRule[] | undefined,
+  addonOption: SvrOptionWithValues,
+  mainOptions: SvrOptionWithValues[],
+  mainSelection: Record<string, string>,
+): SvrOptionValue | null {
+  if (!rules?.length || addonOption.values.length < 2) return null
+  const values = availableAddonValues(rules, addonOption, mainOptions, mainSelection)
+  return values.length === 1 ? values[0]! : null
+}
+
 export type ResolvedMapping = {
   mapping: PadOptionMapping
   addonOption: SvrOptionWithValues

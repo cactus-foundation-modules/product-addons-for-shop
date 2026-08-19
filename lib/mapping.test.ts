@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { availableAddonValues, composeContextKey, isAddonApplicable, isAddonValueAvailable } from '@/modules/product-addons-for-shop/lib/mapping'
+import { availableAddonValues, composeContextKey, isAddonApplicable, isAddonValueAvailable, narrowedToSingleValue } from '@/modules/product-addons-for-shop/lib/mapping'
 import type { SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
 
 // The 3D context key an add-on announces. The case this was written for is a
@@ -184,5 +184,31 @@ describe('availableAddonValues', () => {
   it('can empty an option outright, which the box reads as unavailable', () => {
     const none = [{ addonOption: 'Depth', addonValueSlugs: ['60cm', '80cm'], mainOption: 'Width', mainValueSlugs: ['140cm'] }]
     expect(availableAddonValues(none, PED_DEPTH, DESK, { width: 'w120' })).toEqual([])
+  })
+})
+
+describe('narrowedToSingleValue', () => {
+  it('names the last choice standing, so the box can settle it', () => {
+    expect(narrowedToSingleValue(BIG_ONLY, PED_DEPTH, DESK, { width: 'w120' })?.slug).toBe('60cm')
+  })
+
+  it('settles nothing while more than one choice is left', () => {
+    expect(narrowedToSingleValue(BIG_ONLY, PED_DEPTH, DESK, { width: 'w140' })).toBeNull()
+    expect(narrowedToSingleValue(BIG_ONLY, PED_DEPTH, DESK, {})).toBeNull()
+  })
+
+  it('settles nothing when no rule applies at all', () => {
+    expect(narrowedToSingleValue(undefined, PED_DEPTH, DESK, { width: 'w120' })).toBeNull()
+    expect(narrowedToSingleValue([], PED_DEPTH, DESK, { width: 'w120' })).toBeNull()
+  })
+
+  it('leaves an option that always had one value exactly as it was', () => {
+    const single = { id: 'only', name: 'Depth', values: [value('p60', '60cm', '60cm')] } as unknown as SvrOptionWithValues
+    expect(narrowedToSingleValue(BIG_ONLY, single, DESK, { width: 'w120' })).toBeNull()
+  })
+
+  it('settles nothing when the rules have ruled every choice out', () => {
+    const none = [{ addonOption: 'Depth', addonValueSlugs: ['60cm', '80cm'], mainOption: 'Width', mainValueSlugs: ['140cm'] }]
+    expect(narrowedToSingleValue(none, PED_DEPTH, DESK, { width: 'w120' })).toBeNull()
   })
 })

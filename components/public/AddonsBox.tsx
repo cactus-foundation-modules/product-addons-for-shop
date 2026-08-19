@@ -38,6 +38,7 @@ import {
   deterministicGroupKey,
   findOptionByName,
   isAddonApplicable,
+  narrowedToSingleValue,
   recommendationNote,
   recommendedQuantityPerUnit,
   resolveMappings,
@@ -470,6 +471,23 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
               followed: null, overridden: false, matchesLater: r.mainOption.name,
             })
           }
+          continue
+        }
+        // One choice left standing is not a choice. A condition that has narrowed
+        // the option to a single value settles it and states it, rather than
+        // asking for a click with one possible answer - the 120cm corner desk
+        // takes the 60cm pedestal and nothing else, so that is what it says. An
+        // option that always had one value is untouched: settling those would
+        // change how every add-on on the site already behaves. Matched and pinned
+        // options are handled above; they lock themselves, with a better line.
+        const only = narrowedToSingleValue(addon.config.valueShowWhen, option, parentOptions, parentSelection)
+        if (only) {
+          selection[option.id] = only.id
+          lockedOptionIds.push(option.id)
+          shown.push({
+            option: narrowed, mode: 'choose', valueId: null, locked: only.label, lockedValue: only,
+            followed: null, overridden: false, matchesLater: null,
+          })
           continue
         }
         if (mode === 'default' || mode === 'recommend') {
