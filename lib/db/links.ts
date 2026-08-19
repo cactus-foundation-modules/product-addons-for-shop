@@ -33,6 +33,7 @@ function parseConfig(raw: unknown): PadLinkConfig {
       : {}),
     ...(Array.isArray(cfg.showWhen) ? { showWhen: parseShowWhen(cfg.showWhen) } : {}),
     ...(Array.isArray(cfg.valueShowWhen) ? { valueShowWhen: parseValueShowWhen(cfg.valueShowWhen) } : {}),
+    ...(cfg.hideChildAddons === true ? { hideChildAddons: true } : {}),
   }
 }
 
@@ -136,18 +137,27 @@ export async function getLinksByIds(ids: string[]): Promise<Map<string, PadLink>
 }
 
 /**
- * Whether linking `addonProductId` under `productId` would close a cycle -
- * i.e. `productId` is already reachable FROM `addonProductId` through existing
- * links. Walks the link graph breadth-first with a visited set, so even a
- * pre-existing loop in the data terminates.
+ * Whether linking `addonProductId` under `productId` would close a cycle the
+ * storefront would then have to walk - i.e. `productId` is reachable FROM
+ * `addonProductId` through links that carry their own add-ons onwards. Walks
+ * the link graph breadth-first with a visited set, so even a pre-existing loop
+ * in the data terminates.
+ *
+ * Links marked `hideChildAddons` are dead ends by definition: the box stops
+ * there and never asks what that product offers. So they are not followed, and
+ * a NEW link that stops there cannot close anything either - which is precisely
+ * how a sofa and a coffee table get to be add-ons of each other.
  */
-export async function wouldCreateCycle(productId: string, addonProductId: string): Promise<boolean> {
+export async function wouldCreateCycle(productId: string, addonProductId: string, hideChildAddons = false): Promise<boolean> {
   if (productId === addonProductId) return true
+  if (hideChildAddons) return false
   const visited = new Set<string>([addonProductId])
   let frontier = [addonProductId]
   while (frontier.length > 0) {
     const rows = await prisma.$queryRaw<{ addon_product_id: string }[]>`
-      SELECT "addon_product_id" FROM "pad_links" WHERE "product_id" = ANY(${frontier})
+      SELECT "addon_product_id" FROM "pad_links"
+      WHERE "product_id" = ANY(${frontier})
+        AND COALESCE("config" ->> 'hideChildAddons', '') <> 'true'
     `
     frontier = []
     for (const row of rows) {

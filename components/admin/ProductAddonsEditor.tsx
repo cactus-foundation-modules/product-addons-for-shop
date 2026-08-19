@@ -22,6 +22,9 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<SearchHit[]>([])
+  // The product a loop refusal was about, so the way out can be offered by name
+  // rather than as an abstract second chance.
+  const [loopOffer, setLoopOffer] = useState<SearchHit | null>(null)
   const searchSeq = useRef(0)
 
   const reload = useCallback(async () => {
@@ -51,12 +54,22 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
     return () => clearTimeout(timer)
   }, [query, productId])
 
-  async function addLink(addonProductId: string) {
+  async function addLink(hit: SearchHit, hideChildAddons = false) {
     setError(null)
+    setLoopOffer(null)
     const res = await fetch(`${API}/products/${productId}/links`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ addonProductId }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ addonProductId: hit.id, ...(hideChildAddons ? { hideChildAddons: true } : {}) }),
     })
-    if (!res.ok) { setError((await res.json()).error ?? 'Could not add that product'); return }
+    if (!res.ok) {
+      const data = await res.json()
+      setError(data.error ?? 'Could not add that product')
+      // A loop is the one refusal with a way out, so it is offered here instead
+      // of leaving the owner to work out that the chain is what is in the way.
+      if (data.loop) setLoopOffer(hit)
+      return
+    }
     setQuery(''); setHits([])
     await reload()
   }
@@ -114,7 +127,16 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
         the product page and in the showcase alike - the arrows change it.
       </p>
 
-      {error && <p style={{ margin: 0, color: 'var(--color-danger)', fontSize: '0.8125rem' }}>{error}</p>}
+      {error && (
+        <div style={{ display: 'grid', gap: '0.375rem', justifyItems: 'start' }}>
+          <p style={{ margin: 0, color: 'var(--color-danger)', fontSize: '0.8125rem' }}>{error}</p>
+          {loopOffer && (
+            <button type="button" style={btn} onClick={() => addLink(loopOffer, true)}>
+              Add {loopOffer.name} without its own add-ons
+            </button>
+          )}
+        </div>
+      )}
 
       {payload.links.map((view, index) => (
         <LinkEditor
@@ -139,7 +161,7 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
           <ul style={{ listStyle: 'none', margin: 0, padding: '0.25rem', border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--color-surface)', display: 'grid', gap: '0.125rem', maxHeight: 220, overflowY: 'auto' }}>
             {hits.map((hit) => (
               <li key={hit.id}>
-                <button type="button" style={{ ...btn, width: '100%', textAlign: 'left', border: 'none' }} onClick={() => addLink(hit.id)}>
+                <button type="button" style={{ ...btn, width: '100%', textAlign: 'left', border: 'none' }} onClick={() => addLink(hit)}>
                   {hit.name}{hit.sku ? ` · ${hit.sku}` : ''}
                 </button>
               </li>
@@ -553,7 +575,27 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
           <input type="checkbox" checked={link.plannerStandalone} onChange={(e) => onPatch({ plannerStandalone: e.target.checked })} />
           Can be placed on its own in the space planner
         </label>
+        <label style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem', paddingBottom: '0.375rem' }}>
+          <input
+            type="checkbox"
+            checked={config.hideChildAddons !== true}
+            onChange={(e) => {
+              const next = { ...config }
+              if (e.target.checked) delete next.hideChildAddons
+              else next.hideChildAddons = true
+              patchConfig(next)
+            }}
+          />
+          Offer its own add-ons here
+        </label>
       </div>
+      {config.hideChildAddons === true && (
+        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          The chain stops here: whatever this add-on offers on its own page is left there. That is how two products get
+          to be add-ons of each other - a coffee table offered with a sofa, and the sofa offered with the coffee table,
+          without either page ending up offering itself.
+        </p>
+      )}
 
       {contextKey.trim() && view.addonOptions.length > 0 && (
         <div style={{ display: 'grid', gap: '0.25rem' }}>

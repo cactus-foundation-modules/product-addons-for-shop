@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
-import { deleteLink, getLinkById, updateLink } from '@/modules/product-addons-for-shop/lib/db/links'
+import { deleteLink, getLinkById, updateLink, wouldCreateCycle } from '@/modules/product-addons-for-shop/lib/db/links'
 
 const MappingSchema = z.object({
   addonOption: z.string().trim().min(1),
@@ -47,6 +47,7 @@ const PatchBody = z.object({
     modelContextOptions: z.array(z.string().trim().min(1)).max(4).optional(),
     showWhen: z.array(ShowWhenSchema).max(8).optional(),
     valueShowWhen: z.array(ValueShowWhenSchema).max(8).optional(),
+    hideChildAddons: z.boolean().optional(),
   }).optional(),
 })
 
@@ -54,10 +55,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const gate = await requireShopUser('shop.products')
   if (gate.error) return gate.error
   const { id } = await params
-  if (!(await getLinkById(id))) return NextResponse.json({ error: 'Link not found' }, { status: 404 })
+  const existing = await getLinkById(id)
+  if (!existing) return NextResponse.json({ error: 'Link not found' }, { status: 404 })
   const parsed = PatchBody.safeParse(await request.json())
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid request' }, { status: 400 })
+  }
+  // Letting the chain run on again can re-open a loop the tick had closed, so
+  // the same question gets asked on the way back as on the way out.
+  const config = parsed.data.config
+  if (config && config.hideChildAddons !== true
+      && await wouldCreateCycle(existing.productId, existing.addonProductId)) {
+    return NextResponse.json({
+      error: 'Leave “Offer its own add-ons here” unticked: these products are add-ons of each other, and the chain would run in a loop.',
+    }, { status: 400 })
   }
   await updateLink(id, parsed.data)
   return NextResponse.json({ link: await getLinkById(id) })

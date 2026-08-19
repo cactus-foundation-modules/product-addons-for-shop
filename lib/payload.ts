@@ -16,7 +16,8 @@ import type { PadAddonPayload, PadBoxPayload, PadLink } from '@/modules/product-
 // data its own page runs on), and the chain beneath it. Chains are resolved to
 // a fixed depth with a visited set: the save-time cycle guard should make the
 // set redundant, but a page render must not be the thing that finds out it was
-// not.
+// not. A link marked `hideChildAddons` ends its branch there by design, which
+// is what allows two products to be add-ons of each other.
 //
 // Returns null when the product has no usable add-ons at all - the tab
 // provider reads that as "no tab", the box as "render nothing".
@@ -43,7 +44,10 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
 
   const nextVisited = new Set(visited)
   nextVisited.add(link.addonProductId)
-  const childLinks = await getLinksForProduct(link.addonProductId, true)
+  // A link that stops the chain is never asked what the add-on itself offers.
+  // That is the whole point of it: a sofa and a coffee table can each be an
+  // add-on of the other because neither drags the other's list along behind it.
+  const childLinks = link.config.hideChildAddons ? [] : await getLinksForProduct(link.addonProductId, true)
   const children = (
     await Promise.all(childLinks.map((child) => buildAddon(child, nextVisited, depth + 1)))
   ).filter((c): c is PadAddonPayload => c !== null)

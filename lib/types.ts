@@ -129,6 +129,16 @@ export type PadLinkConfig = {
   // of whose values is ruled out makes the add-on unavailable for that
   // configuration, said out loud, rather than silently emptying the row.
   valueShowWhen?: PadValueShowWhenRule[]
+  // Whether this add-on turns up WITHOUT its own accessories underneath it. A
+  // coffee table sold alongside a sofa wants the sofa offered on its page and
+  // itself offered on the sofa's - which reads as a loop to the save-time
+  // guard, and would have the sofa's own page offer the table offering the sofa
+  // again. Ticked, the chain simply stops here: the add-on is offered on its
+  // own terms and nothing hangs beneath it, so two products can each be an
+  // add-on of the other without either page eating its own tail.
+  //
+  // Absent (the usual case) means the chain carries on exactly as before.
+  hideChildAddons?: boolean
 }
 
 export type PadLink = {
@@ -186,8 +196,10 @@ export type PadAddonPayload = {
   // owner can see the sold-out accessory rather than wonder where it went.
   outOfStock: boolean
   // Nested add-ons of this add-on (an accessory's own accessories), one level
-  // per hop. Cycle-guarded at link save AND at read (belt and braces), so a
-  // malicious row cannot hang the page.
+  // per hop. Empty when the link says the chain stops here (`hideChildAddons`),
+  // which is what lets two products be add-ons of each other. Cycle-guarded at
+  // link save AND at read (belt and braces), so a malicious row cannot hang the
+  // page.
   children: PadAddonPayload[]
 }
 

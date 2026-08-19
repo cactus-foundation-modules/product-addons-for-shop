@@ -13,7 +13,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json(await buildAdminSectionPayload(id))
 }
 
-const CreateBody = z.object({ addonProductId: z.string().min(1) })
+// `hideChildAddons` is offered at creation because the loop refusal is the only
+// time anybody finds out they wanted it: the editor shows the way out with the
+// refusal and posts again with this set.
+const CreateBody = z.object({ addonProductId: z.string().min(1), hideChildAddons: z.boolean().optional() })
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireShopUser('shop.products')
@@ -22,15 +25,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const parsed = CreateBody.safeParse(await request.json())
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   const addonProductId = parsed.data.addonProductId
+  const hideChildAddons = parsed.data.hideChildAddons === true
 
   const products = await getProductsByIds([id, addonProductId])
   if (!products.get(id) || !products.get(addonProductId)) {
     return NextResponse.json({ error: 'Product not found' }, { status: 404 })
   }
   // The two refusals that keep the storefront honest: a loop of add-ons, and a
-  // product whose required personalisation the box cannot collect.
-  if (await wouldCreateCycle(id, addonProductId)) {
-    return NextResponse.json({ error: 'That would make these products add-ons of each other in a loop - one of them has to stand alone.' }, { status: 400 })
+  // product whose required personalisation the box cannot collect. The loop is
+  // the softer of the two - `loop: true` tells the editor to offer the way out
+  // (add it without its own add-ons) rather than leave the owner stuck.
+  if (await wouldCreateCycle(id, addonProductId, hideChildAddons)) {
+    return NextResponse.json({
+      error: 'That would make these products add-ons of each other in a loop. Add it without its own add-ons and they can sit alongside each other.',
+      loop: true,
+    }, { status: 400 })
   }
   const personalisation = await getAddons(addonProductId)
   if (personalisation.some((a) => a.required)) {
@@ -41,7 +50,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const link = await createLink({ productId: id, addonProductId })
+    const link = await createLink({
+      productId: id,
+      addonProductId,
+      ...(hideChildAddons
+        ? { config: { optionMappings: [], quantity: { mode: 'recommended' as const, base: 1 }, hideChildAddons: true } }
+        : {}),
+    })
     return NextResponse.json({ link })
   } catch (error) {
     const message = error instanceof Error && /unique/i.test(error.message)
