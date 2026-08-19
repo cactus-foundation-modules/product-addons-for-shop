@@ -54,6 +54,7 @@ import {
   type PadGalleryImage,
 } from '@/modules/product-addons-for-shop/components/public/AddonImageModal'
 import { PAD_META_KEY, type PadAddonPayload, type PadBoxPayload } from '@/modules/product-addons-for-shop/lib/types'
+import { PAD_URL_PARAM, decodePadParams, encodePadParam } from '@/modules/product-addons-for-shop/lib/url-state'
 
 // Per-addon UI state, keyed by linkId (chain rows included - link ids are
 // unique across the whole tree).
@@ -381,6 +382,97 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     window.addEventListener(ADDON_FOCUS_EVENT, onFocus)
     return () => window.removeEventListener(ADDON_FOCUS_EVENT, onFocus)
   }, [preview])
+
+  // Every add-on in the payload by link id, chain children included - the
+  // same tree resolveAddon walks, flattened for the URL codec below.
+  const addonsByLinkId = useMemo(() => {
+    const map = new Map<string, PadAddonPayload>()
+    const walk = (addons: PadAddonPayload[]) => {
+      for (const addon of addons) {
+        map.set(addon.linkId, addon)
+        walk(addon.children)
+      }
+    }
+    walk(payload.addons)
+    return map
+  }, [payload.addons])
+
+  // ---- Shareable URLs -----------------------------------------------------
+  // The ticked add-ons live in the address bar as `pad` parameters (see
+  // lib/url-state.ts), alongside the main product's own option parameters
+  // that shop-variations writes. Opening a link someone shared restores the
+  // same ticks, choices and quantities they were looking at.
+  //
+  // Restore once after mount. This is a client island, so the server HTML
+  // opens with nothing ticked and the shared state lands a beat later - the
+  // acceptable cost of keeping the whole restore in one place; the social
+  // preview never depends on add-ons (they do not change the main gallery).
+  const urlRestored = useRef(false)
+  useEffect(() => {
+    if (preview) return
+    if (urlRestored.current) return
+    urlRestored.current = true
+    const entries = decodePadParams(new URLSearchParams(window.location.search).getAll(PAD_URL_PARAM))
+    if (entries.length === 0) return
+    // Deferred a tick so this effect sets no state synchronously - the same
+    // treatment as the selection snapshot above.
+    queueMicrotask(() => setStates((prev) => {
+      const next = { ...prev }
+      for (const entry of entries) {
+        const addon = addonsByLinkId.get(entry.linkId)
+        if (!addon) continue
+        const valueToOption = new Map<string, string>()
+        for (const option of addon.selector.options) {
+          for (const value of option.values) valueToOption.set(value.id, option.id)
+        }
+        const chosen: Record<string, string> = {}
+        const overridden: Record<string, boolean> = {}
+        for (const valueId of entry.valueIds) {
+          const optionId = valueToOption.get(valueId)
+          if (!optionId) continue
+          chosen[optionId] = valueId
+          // A pick worth writing into a link was the shopper's own, so it
+          // restores as an override; where it merely equals what the option
+          // would follow anyway, resolveAddon reads that as following again.
+          overridden[optionId] = true
+        }
+        next[entry.linkId] = {
+          ...(next[entry.linkId] ?? { enabled: false, chosen: {}, overridden: {}, qty: null, added: false }),
+          enabled: true,
+          chosen,
+          overridden,
+          qty: entry.qty,
+        }
+      }
+      return next
+    }))
+  }, [preview, addonsByLinkId])
+
+  // Write on every change AFTER the mount pass - the first run still sees the
+  // pre-restore (empty) state, and writing that would wipe the very parameters
+  // the restore above is reading. replaceState keeps the back button out of
+  // it, and only this module's parameters are touched: the main product's
+  // option parameters (and anything else on the URL) pass through untouched.
+  const urlWriteArmed = useRef(false)
+  useEffect(() => {
+    if (preview) return
+    if (!urlWriteArmed.current) {
+      urlWriteArmed.current = true
+      return
+    }
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete(PAD_URL_PARAM)
+      for (const [linkId, state] of Object.entries(states)) {
+        if (!state.enabled || !addonsByLinkId.has(linkId)) continue
+        url.searchParams.append(PAD_URL_PARAM, encodePadParam({ linkId, valueIds: Object.values(state.chosen), qty: state.qty }))
+      }
+      const next = url.toString()
+      if (next !== window.location.href) window.history.replaceState(window.history.state, '', next)
+    } catch {
+      // A URL we cannot rewrite is a cosmetic loss, never a broken box.
+    }
+  }, [preview, states, addonsByLinkId])
 
   // The main selection as option id -> value id, order-independent: each
   // chosen value id belongs to exactly one option.
