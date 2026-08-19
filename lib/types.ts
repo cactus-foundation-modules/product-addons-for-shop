@@ -6,6 +6,7 @@
 // out loud instead of the storefront guessing.
 
 import type { SvrOptionWithValues, VariantSelectorPayload } from '@/modules/shop-variations/lib/types'
+import type { ProductUrlStyle } from '@/modules/shop/lib/product-url'
 
 // How one of the add-on product's options gets its value when the add-on is
 // bought from the main product's page:
@@ -209,6 +210,10 @@ export type PadBoxPayload = {
   // clicked - resolved per request on the server, so it cannot be forged from
   // the browser or served to a shopper out of a shared cache.
   staffView: boolean
+  // Where the shop's product pages live, so the box can link to an add-on's own
+  // page. Optional: a payload serialised before this shipped carries no such
+  // key, which reads as the default /shop/products/<slug> style.
+  productUrlStyle?: ProductUrlStyle
 }
 
 // ---------------------------------------------------------------------------

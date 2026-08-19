@@ -126,5 +126,9 @@ export async function buildBoxPayload(productId: string): Promise<PadBoxPayload 
     priceSuffix: usable[0]?.selector.priceSuffix ?? '',
     currencySymbol: config.currencySymbol,
     staffView,
+    // Resolved here because only the server can ask the shop where its product
+    // pages live, and the box's own "View product" link would otherwise guess
+    // at an address that does not exist on a shop serving products off the root.
+    productUrlStyle: config.productUrlStyle,
   }
 }

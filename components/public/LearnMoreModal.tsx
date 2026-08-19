@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-export function LearnMoreModal({ slug, name, onClose }: { slug: string; name: string; onClose: () => void }) {
+export function LearnMoreModal({ slug, name, onClose, productHref }: { slug: string; name: string; onClose: () => void; productHref: string }) {
   const closeRef = useRef<HTMLButtonElement>(null)
   // The frame is a whole page through the whole pipeline - gallery, designed
   // description, specification - so on a cold route it can be a few seconds
@@ -68,7 +68,7 @@ export function LearnMoreModal({ slug, name, onClose }: { slug: string; name: st
           {/* A new tab rather than this one: the shopper is mid-configure on the
               parent product, and taking the page away from them to show an
               add-on would lose that. */}
-          <a className="padlm-view" href={`/shop/products/${encodeURIComponent(slug)}`} target="_blank" rel="noopener noreferrer">
+          <a className="padlm-view" href={productHref} target="_blank" rel="noopener noreferrer">
             View product
           </a>
           <button type="button" className="padlm-done" onClick={onClose}>Close</button>

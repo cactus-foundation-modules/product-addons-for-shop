@@ -55,6 +55,7 @@ import {
 } from '@/modules/product-addons-for-shop/components/public/AddonImageModal'
 import { PAD_META_KEY, type PadAddonPayload, type PadBoxPayload } from '@/modules/product-addons-for-shop/lib/types'
 import { PAD_URL_PARAM, decodePadParams, encodePadParam } from '@/modules/product-addons-for-shop/lib/url-state'
+import { productHref } from '@/modules/shop/lib/product-url'
 
 // Per-addon UI state, keyed by linkId (chain rows included - link ids are
 // unique across the whole tree).
@@ -1131,7 +1132,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       <h3 className="pad-heading">{payload.nounPlural}</h3>
       {resolvedAll.map((r, index) => renderAddonRow(r, index))}
       {learnMore && (
-        <LearnMoreModal slug={learnMore.slug} name={learnMore.name} onClose={() => setLearnMore(null)} />
+        <LearnMoreModal slug={learnMore.slug} name={learnMore.name} productHref={productHref(learnMore.slug, payload.productUrlStyle ?? 'SHOP')} onClose={() => setLearnMore(null)} />
       )}
       {gallery && (
         <AddonImageModal name={gallery.name} images={gallery.images} onClose={() => setGallery(null)} />

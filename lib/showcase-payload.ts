@@ -35,6 +35,7 @@ export async function buildShowcasePayload(productId: string): Promise<(Showcase
     // accessory that only applies to some configurations must not be offered
     // here when the box below would not offer it.
     mainOptions: box.mainOptions,
+    productUrlStyle: config.productUrlStyle,
     cards: box.addons.map((addon) => {
       const from = fromPrice(addon)
       return {

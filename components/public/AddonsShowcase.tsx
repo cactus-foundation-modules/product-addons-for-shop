@@ -18,6 +18,7 @@ import {
   type VariantSelectionDetail,
 } from '@/modules/shop-variations/lib/selection-broadcast'
 import type { SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
+import { productHref, type ProductUrlStyle } from '@/modules/shop/lib/product-url'
 import { LearnMoreModal } from '@/modules/product-addons-for-shop/components/public/LearnMoreModal'
 import {
   AddonImageModal,
@@ -74,6 +75,10 @@ export type ShowcasePayload = {
   // against the shopper's live choices. Optional for the same reason as the
   // rest: without it no card carries conditions worth testing either.
   mainOptions?: SvrOptionWithValues[]
+  // Where the shop's product pages live, for the "View product" link on a
+  // card's Learn more panel. Optional for the same reason as the rest: a
+  // payload serialised before this shipped reads as the default style.
+  productUrlStyle?: ProductUrlStyle
 }
 
 export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload; preview?: boolean }) {
@@ -226,7 +231,7 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
           )
         })}
       </ul>
-      {learnMore && <LearnMoreModal slug={learnMore.slug} name={learnMore.name} onClose={() => setLearnMore(null)} />}
+      {learnMore && <LearnMoreModal slug={learnMore.slug} name={learnMore.name} productHref={productHref(learnMore.slug, payload.productUrlStyle ?? 'SHOP')} onClose={() => setLearnMore(null)} />}
       {gallery && <AddonImageModal name={gallery.name} images={gallery.images} onClose={() => setGallery(null)} />}
     </div>
   )
