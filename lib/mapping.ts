@@ -4,7 +4,7 @@
 // selector payloads both sides already hold.
 
 import type { SvrOptionWithValues, SvrOptionValue } from '@/modules/shop-variations/lib/types'
-import type { PadOptionMapping, PadQuantityRule, PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
+import type { PadOptionMapping, PadQuantityRule, PadShowWhenRule, PadValueShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
 
 const norm = (s: string) => s.trim().toLowerCase()
 
@@ -84,6 +84,57 @@ export function isAddonApplicable(
     if (!wanted.includes(chosen.slug)) return false
   }
   return true
+}
+
+/**
+ * Whether ONE value of an add-on's own option is on the menu for the main product
+ * as currently configured.
+ *
+ * Same rule as `isAddonApplicable`, one level down: offered unless ruled out. The
+ * 80cm-deep pedestal is a real thing the shopper may well want, so it is on the
+ * list from the off and leaves only when a desk is picked that has no 800-deep run
+ * to butt it against. A value no rule mentions is always offered.
+ *
+ * The one deliberate false is the same one too: a rule naming a main option that
+ * no longer exists cannot be tested at all, and selling a size that may not fit is
+ * exactly what the rule was written to prevent.
+ */
+export function isAddonValueAvailable(
+  rules: PadValueShowWhenRule[] | undefined,
+  addonOptionName: string,
+  addonValueSlug: string,
+  mainOptions: SvrOptionWithValues[],
+  mainSelection: Record<string, string>,
+): boolean {
+  for (const rule of rules ?? []) {
+    if (norm(rule.addonOption) !== norm(addonOptionName)) continue
+    const governed = (rule.addonValueSlugs ?? []).filter((slug) => slug.trim() !== '')
+    if (!governed.includes(addonValueSlug)) continue
+    const wanted = (rule.mainValueSlugs ?? []).filter((slug) => slug.trim() !== '')
+    if (wanted.length === 0) continue
+    const option = findOptionByName(mainOptions, rule.mainOption)
+    if (!option) return false
+    const chosenId = mainSelection[option.id]
+    const chosen = chosenId ? option.values.find((v) => v.id === chosenId) : undefined
+    // Nothing chosen yet rules nothing out.
+    if (!chosen) continue
+    if (!wanted.includes(chosen.slug)) return false
+  }
+  return true
+}
+
+/**
+ * The values of one add-on option the shopper may actually pick right now. The full
+ * list when nothing governs it, which is very nearly always.
+ */
+export function availableAddonValues(
+  rules: PadValueShowWhenRule[] | undefined,
+  addonOption: SvrOptionWithValues,
+  mainOptions: SvrOptionWithValues[],
+  mainSelection: Record<string, string>,
+): SvrOptionValue[] {
+  if (!rules?.length) return addonOption.values
+  return addonOption.values.filter((v) => isAddonValueAvailable(rules, addonOption.name, v.slug, mainOptions, mainSelection))
 }
 
 export type ResolvedMapping = {

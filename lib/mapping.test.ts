@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composeContextKey, isAddonApplicable } from '@/modules/product-addons-for-shop/lib/mapping'
+import { availableAddonValues, composeContextKey, isAddonApplicable, isAddonValueAvailable } from '@/modules/product-addons-for-shop/lib/mapping'
 import type { SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
 
 // The 3D context key an add-on announces. The case this was written for is a
@@ -104,5 +104,85 @@ describe('isAddonApplicable', () => {
     expect(isAddonApplicable(both, MAIN, { ports: 'p-yes' })).toBe(true)
     // One incompatible answer is enough, whatever the other rules say.
     expect(isAddonApplicable(both, MAIN, { ports: 'p-no' })).toBe(false)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// One of the add-on's OWN choices taken off the menu, rather than the whole
+// add-on: the 80cm-deep pedestal on a desk with no 800-deep run to butt it to.
+// ---------------------------------------------------------------------------
+
+const DESK: SvrOptionWithValues[] = [
+  {
+    id: 'width',
+    name: 'Width',
+    values: [value('w120', '120cm', '120cm'), value('w140', '140cm', '140cm'), value('w160', '160cm', '160cm')],
+  },
+] as unknown as SvrOptionWithValues[]
+
+const PED_DEPTH = {
+  id: 'pdepth',
+  name: 'Depth',
+  values: [value('p60', '60cm', '60cm'), value('p80', '80cm', '80cm')],
+} as unknown as SvrOptionWithValues
+
+const BIG_ONLY = [{ addonOption: 'Depth', addonValueSlugs: ['80cm'], mainOption: 'Width', mainValueSlugs: ['140cm', '160cm'] }]
+
+describe('isAddonValueAvailable', () => {
+  it('offers every value when nothing governs it', () => {
+    expect(isAddonValueAvailable(undefined, 'Depth', '80cm', DESK, { width: 'w120' })).toBe(true)
+    expect(isAddonValueAvailable([], 'Depth', '80cm', DESK, { width: 'w120' })).toBe(true)
+  })
+
+  it('rules a value out only on a main value outside the list', () => {
+    expect(isAddonValueAvailable(BIG_ONLY, 'Depth', '80cm', DESK, { width: 'w140' })).toBe(true)
+    expect(isAddonValueAvailable(BIG_ONLY, 'Depth', '80cm', DESK, { width: 'w120' })).toBe(false)
+  })
+
+  it('leaves the values it does not name alone', () => {
+    expect(isAddonValueAvailable(BIG_ONLY, 'Depth', '60cm', DESK, { width: 'w120' })).toBe(true)
+  })
+
+  it('rules nothing out while the driving option is unchosen', () => {
+    expect(isAddonValueAvailable(BIG_ONLY, 'Depth', '80cm', DESK, {})).toBe(true)
+  })
+
+  it('ignores a half-filled rule', () => {
+    const empty = [{ addonOption: 'Depth', addonValueSlugs: ['80cm'], mainOption: 'Width', mainValueSlugs: [] }]
+    expect(isAddonValueAvailable(empty, 'Depth', '80cm', DESK, { width: 'w120' })).toBe(true)
+    const noValues = [{ addonOption: 'Depth', addonValueSlugs: [], mainOption: 'Width', mainValueSlugs: ['140cm'] }]
+    expect(isAddonValueAvailable(noValues, 'Depth', '80cm', DESK, { width: 'w120' })).toBe(true)
+  })
+
+  it('holds the value back when the named main option has gone', () => {
+    const broken = [{ addonOption: 'Depth', addonValueSlugs: ['80cm'], mainOption: 'Widths', mainValueSlugs: ['140cm'] }]
+    expect(isAddonValueAvailable(broken, 'Depth', '80cm', DESK, { width: 'w140' })).toBe(false)
+  })
+
+  it('matches both option names by name, case and spacing aside', () => {
+    const loose = [{ addonOption: ' depth ', addonValueSlugs: ['80cm'], mainOption: ' width ', mainValueSlugs: ['140cm'] }]
+    expect(isAddonValueAvailable(loose, 'Depth', '80cm', DESK, { width: 'w120' })).toBe(false)
+    expect(isAddonValueAvailable(loose, 'Depth', '80cm', DESK, { width: 'w140' })).toBe(true)
+  })
+
+  it('leaves an option of a different name untouched', () => {
+    expect(isAddonValueAvailable(BIG_ONLY, 'Finish', '80cm', DESK, { width: 'w120' })).toBe(true)
+  })
+})
+
+describe('availableAddonValues', () => {
+  it('hands back the option’s own list when no rule applies', () => {
+    expect(availableAddonValues(undefined, PED_DEPTH, DESK, { width: 'w120' })).toBe(PED_DEPTH.values)
+  })
+
+  it('drops only the ruled-out value', () => {
+    expect(availableAddonValues(BIG_ONLY, PED_DEPTH, DESK, { width: 'w120' }).map((v) => v.slug)).toEqual(['60cm'])
+    expect(availableAddonValues(BIG_ONLY, PED_DEPTH, DESK, { width: 'w160' }).map((v) => v.slug)).toEqual(['60cm', '80cm'])
+  })
+
+  it('can empty an option outright, which the box reads as unavailable', () => {
+    const none = [{ addonOption: 'Depth', addonValueSlugs: ['60cm', '80cm'], mainOption: 'Width', mainValueSlugs: ['140cm'] }]
+    expect(availableAddonValues(none, PED_DEPTH, DESK, { width: 'w120' })).toEqual([])
   })
 })

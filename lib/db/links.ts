@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/db/prisma'
-import type { PadLink, PadLinkConfig, PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
+import type { PadLink, PadLinkConfig, PadShowWhenRule, PadValueShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
 
 // $queryRaw against pad_links, matching the raw-SQL data layers of the other
 // shop companions. Config is stored as jsonb and parsed defensively: a corrupt
@@ -32,7 +32,30 @@ function parseConfig(raw: unknown): PadLinkConfig {
       ? { modelContextOptions: cfg.modelContextOptions.filter((n): n is string => typeof n === 'string' && n.trim() !== '') }
       : {}),
     ...(Array.isArray(cfg.showWhen) ? { showWhen: parseShowWhen(cfg.showWhen) } : {}),
+    ...(Array.isArray(cfg.valueShowWhen) ? { valueShowWhen: parseValueShowWhen(cfg.valueShowWhen) } : {}),
   }
+}
+
+// A value rule needs both option names to be worth keeping; either list of slugs
+// may be empty, which the editor shows as a rule still being written and the
+// storefront ignores.
+function parseValueShowWhen(raw: unknown[]): PadValueShowWhenRule[] {
+  const slugs = (v: unknown) =>
+    Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string' && s.trim() !== '') : []
+  const out: PadValueShowWhenRule[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const rule = entry as Partial<PadValueShowWhenRule>
+    if (typeof rule.addonOption !== 'string' || rule.addonOption.trim() === '') continue
+    if (typeof rule.mainOption !== 'string' || rule.mainOption.trim() === '') continue
+    out.push({
+      addonOption: rule.addonOption,
+      addonValueSlugs: slugs(rule.addonValueSlugs),
+      mainOption: rule.mainOption,
+      mainValueSlugs: slugs(rule.mainValueSlugs),
+    })
+  }
+  return out
 }
 
 // A visibility rule is only worth keeping if it names an option; the values are

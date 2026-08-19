@@ -7,7 +7,7 @@
 // re-fetched after every write so the warnings always describe what is saved.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AdminOption, AdminSectionPayload } from '@/modules/product-addons-for-shop/lib/admin-payload'
-import type { PadLinkConfig, PadOptionMapping, PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
+import type { PadLinkConfig, PadOptionMapping, PadShowWhenRule, PadValueShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
 
 const API = '/api/m/product-addons-for-shop/admin'
 
@@ -212,6 +212,31 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
     patchConfig({ ...config, showWhen: (config.showWhen ?? []).filter((_, i) => i !== index) })
   }
 
+  function setValueShowWhen(index: number, patch: Partial<PadValueShowWhenRule>) {
+    const rules = [...(config.valueShowWhen ?? [])]
+    const current = rules[index]
+    if (!current) return
+    rules[index] = { ...current, ...patch }
+    patchConfig({ ...config, valueShowWhen: rules })
+  }
+
+  function addValueShowWhen() {
+    const firstAddon = view.addonOptions[0]
+    const firstMain = mainOptions[0]
+    if (!firstAddon || !firstMain) return
+    patchConfig({
+      ...config,
+      valueShowWhen: [
+        ...(config.valueShowWhen ?? []),
+        { addonOption: firstAddon.name, addonValueSlugs: [], mainOption: firstMain.name, mainValueSlugs: [] },
+      ],
+    })
+  }
+
+  function removeValueShowWhen(index: number) {
+    patchConfig({ ...config, valueShowWhen: (config.valueShowWhen ?? []).filter((_, i) => i !== index) })
+  }
+
   const quantity = config.quantity
   const perOption = mainOptions.find((o) => o.name === quantity.perOption)
 
@@ -374,6 +399,98 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
         {mainOptions.length > 0 && (
           <div>
             <button type="button" style={btn} onClick={addShowWhen}>Add a condition</button>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gap: '0.375rem' }}>
+        <span style={label}>When to offer each of its choices</span>
+        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          The same idea one level down, for when the add-on fits but one of its sizes does not. Tick
+          the choices to govern and the values of this product they suit, and those choices leave the
+          menu whenever anything else is picked - an 80cm-deep pedestal has nothing to butt against
+          on a desk whose arms are both 600 deep. Everything you do not mention is always offered.
+        </p>
+        {(config.valueShowWhen ?? []).map((rule, ruleIndex) => {
+          const governed = view.addonOptions.find((o) => o.name === rule.addonOption)
+          const ruleMain = mainOptions.find((o) => o.name === rule.mainOption)
+          return (
+            <div key={ruleIndex} style={{ display: 'grid', gap: '0.375rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--color-border)' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.8125rem' }}>
+                <span>Offer these</span>
+                <select
+                  style={field} value={rule.addonOption}
+                  onChange={(e) => setValueShowWhen(ruleIndex, { addonOption: e.target.value, addonValueSlugs: [] })}
+                >
+                  {view.addonOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
+                </select>
+                <span>choices only when</span>
+                <select
+                  style={field} value={rule.mainOption}
+                  onChange={(e) => setValueShowWhen(ruleIndex, { mainOption: e.target.value, mainValueSlugs: [] })}
+                >
+                  {mainOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
+                </select>
+                <span>is</span>
+                <button
+                  type="button" style={{ ...btn, marginLeft: 'auto', color: 'var(--color-danger)' }}
+                  onClick={() => removeValueShowWhen(ruleIndex)}
+                >
+                  Remove condition
+                </button>
+              </div>
+              {governed ? (
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', minWidth: '5rem' }}>Its choices</span>
+                  {governed.values.map((v) => (
+                    <label key={v.slug} style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={rule.addonValueSlugs.includes(v.slug)}
+                        onChange={(e) => setValueShowWhen(ruleIndex, {
+                          addonValueSlugs: e.target.checked
+                            ? [...rule.addonValueSlugs, v.slug]
+                            : rule.addonValueSlugs.filter((slug) => slug !== v.slug),
+                        })}
+                      />
+                      {v.label}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
+                  &ldquo;{rule.addonOption}&rdquo; is not an option on the linked product any more, so this condition does nothing.
+                </span>
+              )}
+              {ruleMain ? (
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', minWidth: '5rem' }}>This product</span>
+                  {ruleMain.values.map((v) => (
+                    <label key={v.slug} style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={rule.mainValueSlugs.includes(v.slug)}
+                        onChange={(e) => setValueShowWhen(ruleIndex, {
+                          mainValueSlugs: e.target.checked
+                            ? [...rule.mainValueSlugs, v.slug]
+                            : rule.mainValueSlugs.filter((slug) => slug !== v.slug),
+                        })}
+                      />
+                      {v.label}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
+                  &ldquo;{rule.mainOption}&rdquo; is not an option on this product any more, so those choices are never offered. Pick another, or remove the condition.
+                </span>
+              )}
+            </div>
+          )
+        })}
+        {mainOptions.length > 0 && view.addonOptions.length > 0 && (
+          <div>
+            <button type="button" style={btn} onClick={addValueShowWhen}>Add a condition</button>
           </div>
         )}
       </div>

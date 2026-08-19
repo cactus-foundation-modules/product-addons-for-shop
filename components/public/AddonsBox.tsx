@@ -33,6 +33,7 @@ import {
 import { addToCart, cartLineKey, getCart, setLineMeta } from '@/modules/shop/components/public/cart'
 import type { SvrOptionValue, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 import {
+  availableAddonValues,
   composeContextKey,
   deterministicGroupKey,
   findOptionByName,
@@ -415,13 +416,38 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     let available = resolved !== null
     let unavailableReason: string | null = resolved === null ? 'Not available at the moment' : null
 
+    // Values the main product's configuration has ruled out are not on the menu at
+    // all - see `valueShowWhen`. The narrowed option object is what gets rendered
+    // and what a pick is checked against; everything that reasons about the add-on
+    // as a PRODUCT (stock, variant resolution, the 3D context key) keeps the full
+    // list, because a size still exists whether or not this desk can take it.
+    const offered = (option: SvrOptionWithValues) =>
+      availableAddonValues(addon.config.valueShowWhen, option, parentOptions, parentSelection)
+    const allowed = (option: SvrOptionWithValues, valueId: string | null | undefined) =>
+      valueId && offered(option).some((v) => v.id === valueId) ? valueId : null
+
     if (resolved) {
       const mapped = new Map(resolved.map((r) => [r.addonOption.id, r]))
       for (const option of addon.selector.options) {
         const r = mapped.get(option.id)
         const mode = r?.mapping.mode
+        const values = offered(option)
+        const narrowed = values.length === option.values.length ? option : { ...option, values }
+        // Every size ruled out is said out loud rather than shown as an empty row:
+        // the accessory fits, this configuration of it does not.
+        if (values.length === 0) {
+          available = false
+          unavailableReason = `Not available for the chosen ${r?.mainOption?.name.toLowerCase() ?? 'configuration'}`
+          continue
+        }
         if (mode === 'match' || mode === 'fixed') {
-          if (r?.value) {
+          if (r?.value && !values.some((v) => v.id === r.value!.id)) {
+            // The value this option would take has been ruled out for the main
+            // product as configured, and the shopper has no say in a matched or
+            // pinned option, so there is nothing to fall back to.
+            available = false
+            unavailableReason = `Not available for the chosen ${r.mainOption?.name.toLowerCase() ?? 'configuration'}`
+          } else if (r?.value) {
             selection[option.id] = r.value.id
             lockedOptionIds.push(option.id)
           } else if (mode === 'fixed' || (r?.mainOption && parentSelection[r.mainOption.id])) {
@@ -437,10 +463,10 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
             // only wants the pedestal should be able to buy the pedestal. The
             // row says the main choice will take it over, and it does: the
             // moment the main option is settled the match locks as usual.
-            const chosen = state.chosen[option.id] ?? null
+            const chosen = allowed(option, state.chosen[option.id])
             if (chosen) selection[option.id] = chosen
             shown.push({
-              option, mode: 'choose', valueId: chosen, locked: null, lockedValue: null,
+              option: narrowed, mode: 'choose', valueId: chosen, locked: null, lockedValue: null,
               followed: null, overridden: false, matchesLater: r.mainOption.name,
             })
           }
@@ -450,20 +476,20 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
           // Followed value: the main selection's translation (default) or the
           // admin's pick (recommend). A recommend whose picked value has
           // vanished follows nothing and reads as a plain choice.
-          const followed = r?.value?.id ?? null
+          const followed = allowed(option, r?.value?.id)
           // Landing back on the followed value is not an override, however the
           // shopper got there: the option starts following again, so a main
           // change still carries it and the note reads plainly.
           const overridden = !!state.overridden[option.id] && (state.chosen[option.id] ?? null) !== followed
-          const chosen = overridden ? state.chosen[option.id] ?? null : followed
+          const chosen = overridden ? allowed(option, state.chosen[option.id]) : followed
           if (chosen) selection[option.id] = chosen
-          shown.push({ option, mode, valueId: chosen, locked: null, lockedValue: null, followed, overridden, matchesLater: null })
+          shown.push({ option: narrowed, mode, valueId: chosen, locked: null, lockedValue: null, followed, overridden, matchesLater: null })
           continue
         }
         // choose (explicit or unmapped): the shopper's pick.
-        const chosen = state.chosen[option.id] ?? null
+        const chosen = allowed(option, state.chosen[option.id])
         if (chosen) selection[option.id] = chosen
-        shown.push({ option, mode: 'choose', valueId: chosen, locked: null, lockedValue: null, followed: null, overridden: false, matchesLater: null })
+        shown.push({ option: narrowed, mode: 'choose', valueId: chosen, locked: null, lockedValue: null, followed: null, overridden: false, matchesLater: null })
       }
       // Options the shopper does not choose but should still SEE, listed after
       // resolution so a matched width reads "matches your desk". A fixed value

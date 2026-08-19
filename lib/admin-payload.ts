@@ -169,6 +169,35 @@ async function buildLinkView(link: PadLink, mainOptions: SvrOptionWithValues[]):
     }
   }
 
+  // The same again one level down: a rule that takes ONE of the add-on's own
+  // values off the menu. A main option that has gone hides that value everywhere,
+  // which on an option with only two of them can read as the whole accessory
+  // having gone missing, so it is worth saying plainly.
+  for (const rule of link.config.valueShowWhen ?? []) {
+    const addonOption = findOptionByName(addonOptions, rule.addonOption)
+    if (!addonOption) {
+      warnings.push(`The condition on the "${rule.addonOption}" choices points at an option the linked product no longer has, so it is doing nothing.`)
+      continue
+    }
+    const goneAddon = (rule.addonValueSlugs ?? []).filter((slug) => !addonOption.values.some((v) => v.slug === slug))
+    if (goneAddon.length > 0) {
+      warnings.push(`The condition on "${addonOption.name}" governs ${goneAddon.length === 1 ? 'a choice' : 'choices'} that no longer exist: ${goneAddon.join(', ')}.`)
+    }
+    if ((rule.addonValueSlugs ?? []).length === 0 || (rule.mainValueSlugs ?? []).length === 0) {
+      warnings.push(`The condition on "${addonOption.name}" is only half filled in, so it is being ignored - every choice is offered whatever is picked.`)
+      continue
+    }
+    const mainOption = findOptionByName(mainOptions, rule.mainOption)
+    if (!mainOption) {
+      warnings.push(`The condition on "${addonOption.name}" reads "${rule.mainOption}", which this product no longer has, so those choices are never offered.`)
+      continue
+    }
+    const goneMain = rule.mainValueSlugs.filter((slug) => !mainOption.values.some((v) => v.slug === slug))
+    if (goneMain.length > 0) {
+      warnings.push(`The condition on "${addonOption.name}" names ${goneMain.length === 1 ? 'a choice' : 'choices'} of "${mainOption.name}" that no longer exist: ${goneMain.join(', ')}.`)
+    }
+  }
+
   for (const name of link.config.modelContextOptions ?? []) {
     if (!findOptionByName(addonOptions, name)) {
       warnings.push(`The 3D context key follows "${name}", which is not an option on the linked product - the combined model will not be shown until that is put right.`)

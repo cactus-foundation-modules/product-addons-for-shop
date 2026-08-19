@@ -72,6 +72,30 @@ export type PadShowWhenRule = {
   valueSlugs: string[]
 }
 
+// A condition on the MAIN product's options that decides whether ONE OF THE
+// ADD-ON'S OWN VALUES is on the menu, rather than whether the add-on is.
+//
+// An 80cm-deep pedestal butts the end of an 800-deep desk run. On a 120cm square
+// corner desk both arms are 600 deep, so there is nothing for it to butt - but the
+// 60cm one is fine there, and the pedestal itself is very much wanted. Hiding the
+// whole accessory would be wrong and offering a size that cannot be fitted would be
+// worse, so the size alone comes off the menu.
+//
+// Same polarity as `showWhen`, and for the same reason: the value is offered UNLESS
+// RULED OUT. A rule whose main option is still unchosen has ruled nothing out.
+export type PadValueShowWhenRule = {
+  // The add-on product's option, by NAME.
+  addonOption: string
+  // The value SLUGS on that option this rule governs. Empty means the rule was
+  // never finished in the editor, and it is ignored.
+  addonValueSlugs: string[]
+  // The main product's option, by NAME.
+  mainOption: string
+  // The value SLUGS on the main option that keep those add-on values on offer.
+  // Empty is likewise an unfinished rule.
+  mainValueSlugs: string[]
+}
+
 export type PadLinkConfig = {
   optionMappings: PadOptionMapping[]
   quantity: PadQuantityRule
@@ -94,6 +118,16 @@ export type PadLinkConfig = {
   // ruled nothing out, so it passes. Absent (the usual case) means the add-on
   // is offered unconditionally, exactly as before conditions existed.
   showWhen?: PadShowWhenRule[]
+  // Conditions on the main product's options that decide which of the ADD-ON'S OWN
+  // values are on the menu. `showWhen` takes the whole accessory away; this takes
+  // one of its sizes away and leaves the rest, for the case where the accessory
+  // fits perfectly well - just not in that size.
+  //
+  // Rules are ANDed per value, the main values inside one rule are ORed, and a
+  // value nobody has written a rule about is always offered. An option every one
+  // of whose values is ruled out makes the add-on unavailable for that
+  // configuration, said out loud, rather than silently emptying the row.
+  valueShowWhen?: PadValueShowWhenRule[]
 }
 
 export type PadLink = {

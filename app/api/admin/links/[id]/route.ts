@@ -27,6 +27,15 @@ const ShowWhenSchema = z.object({
   valueSlugs: z.array(z.string().trim().min(1)),
 })
 
+// Both slug lists may be empty for the same reason ShowWhenSchema's may: the
+// editor shows a rule as soon as the two options are picked.
+const ValueShowWhenSchema = z.object({
+  addonOption: z.string().trim().min(1),
+  addonValueSlugs: z.array(z.string().trim().min(1)),
+  mainOption: z.string().trim().min(1),
+  mainValueSlugs: z.array(z.string().trim().min(1)),
+})
+
 const PatchBody = z.object({
   enabled: z.boolean().optional(),
   position: z.number().int().min(0).optional(),
@@ -37,6 +46,7 @@ const PatchBody = z.object({
     quantity: QuantitySchema,
     modelContextOptions: z.array(z.string().trim().min(1)).max(4).optional(),
     showWhen: z.array(ShowWhenSchema).max(8).optional(),
+    valueShowWhen: z.array(ValueShowWhenSchema).max(8).optional(),
   }).optional(),
 })
 
