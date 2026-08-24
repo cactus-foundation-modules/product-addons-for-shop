@@ -2,7 +2,7 @@
 // build the payload server-side and hand it to the client island - so the box
 // is in the first HTML, exactly like the variation controls beside it.
 import { currentProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
-import { getProductBySlug } from '@/modules/shop/lib/db/products'
+import { getProductBySlugCached } from '@/modules/shop/lib/db/products'
 import { buildBoxPayload } from '@/modules/product-addons-for-shop/lib/payload'
 import { AddonsBox } from '@/modules/product-addons-for-shop/components/public/AddonsBox'
 import { shopProductAddonsPuckComponent, type ShopProductAddonsProps } from '@/modules/product-addons-for-shop/components/puck/ShopProductAddons'
@@ -10,7 +10,7 @@ import { shopProductAddonsPuckComponent, type ShopProductAddonsProps } from '@/m
 async function ShopProductAddonsRsc(props: ShopProductAddonsProps) {
   const slug = currentProductSlug()
   if (!slug) return null
-  const product = await getProductBySlug(slug)
+  const product = await getProductBySlugCached(slug)
   if (!product) return null
   const payload = await buildBoxPayload(product.id)
   // A product with no usable add-ons renders nothing at all - placing this

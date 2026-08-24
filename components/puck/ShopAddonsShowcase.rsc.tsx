@@ -2,7 +2,7 @@
 // owner has chosen the BLOCK surface (the automatic tab stands down there and
 // this stands down when the tab is on duty - one showcase, never two).
 import { currentProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
-import { getProductBySlug } from '@/modules/shop/lib/db/products'
+import { getProductBySlugCached } from '@/modules/shop/lib/db/products'
 import { buildShowcasePayload } from '@/modules/product-addons-for-shop/lib/showcase-payload'
 import { AddonsShowcase } from '@/modules/product-addons-for-shop/components/public/AddonsShowcase'
 import { shopAddonsShowcasePuckComponent, type ShopAddonsShowcaseProps } from '@/modules/product-addons-for-shop/components/puck/ShopAddonsShowcase'
@@ -10,7 +10,7 @@ import { shopAddonsShowcasePuckComponent, type ShopAddonsShowcaseProps } from '@
 async function ShopAddonsShowcaseRsc(props: ShopAddonsShowcaseProps) {
   const slug = currentProductSlug()
   if (!slug) return null
-  const product = await getProductBySlug(slug)
+  const product = await getProductBySlugCached(slug)
   if (!product) return null
   const payload = await buildShowcasePayload(product.id)
   if (!payload || payload.surface !== 'BLOCK' || payload.cards.length === 0) return null
