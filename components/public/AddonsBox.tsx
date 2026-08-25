@@ -999,9 +999,12 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
               >
                 {/* The strike belongs to the value's name alone: text-decoration
                     inherits and cannot be cancelled by a descendant, so putting
-                    it on the button would score through the reason as well. */}
-                {outOfStock ? <span className="pad-oosname">{value.label}</span> : value.label}
-                {outOfStock && <span className="pad-oosnote">Out of stock</span>}
+                    it on the button would score through the reason as well.
+                    The name is also where the picked colour lives rather than on
+                    the button, and it is marked to follow the button's own
+                    colour on hover - see the .pad-on rule in the CSS below. */}
+                <span className={outOfStock ? 'pad-oosname' : 'pad-pillname'} data-cactus-hover-fg="inherit">{value.label}</span>
+                {outOfStock && <span className="pad-oosnote" data-cactus-hover-fg="inherit">Out of stock</span>}
               </button>
             )
           })}
@@ -1273,7 +1276,19 @@ const PAD_BOX_CSS = `
 .pad-swatch.pad-on{border-color:var(--color-primary);box-shadow:0 0 0 2px var(--color-surface),0 0 0 4px var(--color-primary)}
 .pad-swatch:disabled{cursor:not-allowed;opacity:0.55}
 .pad-pill{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:999px;padding:0.25rem 0.75rem;font-size:0.8125rem;cursor:pointer;vertical-align:top;margin:0 0.375rem 0.375rem 0}
-.pad-pill.pad-on{border-color:var(--color-primary);color:var(--color-primary);font-weight:600}
+/* The pick is marked on the border and on the NAME, never on the button's own
+   colour - which is the whole difference between this reading and not. A site's
+   Styles > Buttons hover fill arrives over the whole button (background alone on
+   most sites, since a hover text colour is optional) and leaves any colour set
+   on the button exactly where it was, so a primary-teal label ended up marooned
+   on a hover tan while the main product's own options, which keep their label at
+   --color-text and mark the pick with a tint, went on reading perfectly. Putting
+   the colour on the name and marking it data-cactus-hover-fg="inherit" hands it
+   the button's colour for the duration of the hover, exactly as the main
+   product's "Selected" line does (see VariantParts' OptionControl). A site that
+   sets no hover treatment emits no such rule, so the pick simply stays teal. */
+.pad-pill.pad-on{border-color:var(--color-primary);font-weight:600}
+.pad-pill.pad-on .pad-pillname{color:var(--color-primary)}
 .pad-pill:disabled{cursor:not-allowed;color:var(--color-text-muted)}
 /* A choice the warehouse has run dry on: struck through with the reason under
    it, the same look the main product's options wear. Staff can still click it -
