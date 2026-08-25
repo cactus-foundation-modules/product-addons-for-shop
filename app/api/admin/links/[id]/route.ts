@@ -17,6 +17,10 @@ const QuantitySchema = z.object({
   perOption: z.string().trim().optional(),
   perValue: z.record(z.number().min(0).max(99)).optional(),
   note: z.string().trim().max(200).optional(),
+  // Whether the count is per one of the main product and so multiplied by how
+  // many are being bought. Absent means the mode decides - see the storefront's
+  // scalesWithMain.
+  scaleWithMain: z.boolean().optional(),
 })
 
 // Values may be empty - the editor shows a rule the moment an option is picked,

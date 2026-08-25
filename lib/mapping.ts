@@ -237,15 +237,48 @@ export function recommendedQuantityPerUnit(
 }
 
 /**
+ * Whether this rule's count is PER ONE of the main product, and so multiplied
+ * by how many of the main product are being bought.
+ *
+ * The tick decides it where the owner has set one. Where they have not, the
+ * mode does: a recommended count is a count for one of the thing (one screen
+ * per desk is four screens for four desks - which is what the basket's own
+ * drift note has said all along), while a free count is the shopper's own
+ * figure and multiplying it behind their back would be rude.
+ */
+export function scalesWithMain(rule: PadQuantityRule): boolean {
+  return rule.scaleWithMain ?? rule.mode === 'recommended'
+}
+
+/**
+ * The number that actually goes in the basket for one press of an add-on's Add
+ * button: the per-one count times however many of the main product are in hand,
+ * where the rule says the count is a per-one count.
+ *
+ * `mainUnits` is what the main product's own stepper reads. Anything daft (a
+ * missing broadcast, a zero) counts as one, so an accessory can always be
+ * bought.
+ */
+export function scaledQuantity(rule: PadQuantityRule, perUnitQty: number, mainUnits: number): number {
+  const units = Number.isFinite(mainUnits) && mainUnits > 0 ? Math.floor(mainUnits) : 1
+  const per = Number.isFinite(perUnitQty) && perUnitQty > 0 ? Math.floor(perUnitQty) : 1
+  return scalesWithMain(rule) ? per * units : per
+}
+
+/**
  * The auto-built recommendation wording: "We'd recommend 3 × Bench Screens for
  * a 6 Person desk." - or the owner's own note verbatim when the rule carries
  * one. Null when there is nothing to recommend (free mode, or nothing chosen).
+ *
+ * `mainUnits` above one, on a rule that scales, makes the note do the sum out
+ * loud rather than quoting a figure for one desk at a shopper buying four.
  */
 export function recommendationNote(
   rule: PadQuantityRule,
   addonName: string,
   mainOptions: SvrOptionWithValues[],
   mainSelection: Record<string, string>,
+  mainUnits = 1,
 ): string | null {
   const perUnit = recommendedQuantityPerUnit(rule, mainOptions, mainSelection)
   if (perUnit == null) return null
@@ -253,6 +286,12 @@ export function recommendationNote(
   const option = findOptionByName(mainOptions, rule.perOption)
   const chosenId = option ? mainSelection[option.id] : undefined
   const chosen = option && chosenId ? option.values.find((v) => v.id === chosenId) : undefined
+  const total = scaledQuantity(rule, perUnit, mainUnits)
+  if (total !== perUnit) {
+    return chosen
+      ? `We'd recommend ${perUnit} × ${addonName} for each ${chosen.label} configuration - ${total} for the ${mainUnits} you are buying.`
+      : `We'd recommend ${perUnit} × ${addonName} each - ${total} for the ${mainUnits} you are buying.`
+  }
   return chosen
     ? `We'd recommend ${perUnit} × ${addonName} for a ${chosen.label} configuration.`
     : `We'd recommend ${perUnit} × ${addonName}.`

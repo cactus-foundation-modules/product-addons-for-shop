@@ -591,6 +591,24 @@ export function LinkEditor({ view, index, count, startExpanded, mainOptions, onP
             </>
           )}
         </div>
+        {/* Whether the figure above is a count for ONE of the main product. It
+            is for nearly everything physical - one pedestal per desk is four
+            pedestals for four desks - so a recommended count starts ticked and
+            a free one, being the shopper's own number, does not. Untick it for
+            the accessory bought once however big the order is. */}
+        <label style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem' }}>
+          <input
+            type="checkbox"
+            checked={quantity.scaleWithMain ?? quantity.mode === 'recommended'}
+            onChange={(e) => patchConfig({ ...config, quantity: { ...quantity, scaleWithMain: e.target.checked } })}
+          />
+          Count one lot per main product bought
+        </label>
+        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+          {(quantity.scaleWithMain ?? quantity.mode === 'recommended')
+            ? 'Buying four of the main product offers four times this figure, with the sum shown on the page before anything is added.'
+            : 'The figure above is what goes in the basket, however many of the main product are bought.'}
+        </p>
         {quantity.mode === 'recommended' && perOption && (
           <div style={{ display: 'grid', gap: '0.25rem', paddingLeft: '0.5rem' }}>
             {perOption.values.map((v) => (

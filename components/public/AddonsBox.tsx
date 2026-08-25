@@ -31,6 +31,11 @@ import {
   type OptionSelection,
 } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart, cartLineKey, getCart, setLineMeta } from '@/modules/shop/components/public/cart'
+import {
+  PURCHASE_QUANTITY_EVENT,
+  getPurchaseQuantity,
+  type PurchaseQuantityDetail,
+} from '@/modules/shop/components/public/purchase-quantity'
 import type { SvrOptionValue, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 import {
   availableAddonValues,
@@ -42,6 +47,8 @@ import {
   recommendationNote,
   recommendedQuantityPerUnit,
   resolveMappings,
+  scaledQuantity,
+  scalesWithMain,
 } from '@/modules/product-addons-for-shop/lib/mapping'
 import { isValueOutOfStock } from '@/modules/product-addons-for-shop/lib/stock'
 import { publishModelContext } from '@/modules/product-addons-for-shop/lib/model-context'
@@ -68,8 +75,11 @@ type AddonState = {
   // id). An un-overridden default keeps following the main selection live; an
   // un-overridden recommend keeps the admin's pick.
   overridden: Record<string, boolean>
-  // Quantity per one main unit; null = follow the recommendation (or 1 in free
-  // mode until touched).
+  // The number to put in the basket, ONCE THE SHOPPER HAS SET ONE. Null = they
+  // have not touched the stepper, so it follows the recommendation - which,
+  // where the rule counts per main unit, moves with the main product's own
+  // quantity. Held the same way the main product's stepper holds its own figure:
+  // untouched means follow, a number means it is theirs.
   qty: number | null
   // Flash state for this row's own add-to-basket button.
   added: boolean
@@ -125,8 +135,20 @@ type ResolvedAddon = {
   // settledVariantImages. Empty means there is nothing better than the
   // listing's own picture.
   displayImages: string[]
+  // What one press of this row's Add button puts in the basket.
+  addQty: number
+  // The same figure expressed for ONE of the main product, which is what the
+  // line meta and the 3D context are keyed on. Equal to addQty on a rule that
+  // does not count per main unit, and on the ordinary page where one is being
+  // bought.
   perUnitQty: number
+  // How many of the parent this row is counted against - the main product's
+  // stepper for a top-level add-on, the parent add-on's own count for a chained
+  // one. Always 1 on a rule that does not scale.
+  scaleUnits: number
   recommendedPerUnit: number | null
+  // The recommendation as a number to put in the basket, scaling included.
+  recommendedTotal: number | null
   note: string | null
 }
 
@@ -250,8 +272,11 @@ function addonContextKey(r: ResolvedAddon): string | null {
     r.selection ?? {},
   )
   if (!key) return null
+  // Tagged and compared PER MAIN UNIT throughout: a file is modelled as "this
+  // desk with two screens on it", and buying four of that desk does not make it
+  // a different file.
   if (r.addon.config.quantity.mode === 'free') return `${key}:${r.perUnitQty}`
-  if (r.recommendedPerUnit == null || r.perUnitQty === r.recommendedPerUnit) return key
+  if (r.recommendedTotal == null || r.addQty === r.recommendedTotal) return key
   return null
 }
 
@@ -281,16 +306,20 @@ function activeContextKeys(list: ActiveAddon[]): string[] {
 // An add-on contributing a context is already inside the combined model, so it
 // stages nothing of its own - otherwise the same screens both ride on the desk
 // and lean against the wall as loose panels.
+//
+// `qtyPerMain` is exactly what it says and never the line's own quantity: the
+// space planner multiplies it by the main item's count when it stages a saved
+// plan back into a basket, so handing it the total for four desks would put
+// sixteen screens on four desks.
 function lineModelContext(
   r: ResolvedAddon,
   group: string,
-  qty: number,
 ): { stage: 'none' | 'self'; bundleOf: string; qtyPerMain: number; contextKey?: string; valueIds?: string[] } {
   const contextKey = addonContextKey(r)
   return {
     stage: contextKey ? 'none' : r.addon.plannerStandalone ? 'self' : 'none',
     bundleOf: group,
-    qtyPerMain: qty,
+    qtyPerMain: r.perUnitQty,
     ...(contextKey ? { contextKey, valueIds: r.selection ? Object.values(r.selection) : [] } : {}),
   }
 }
@@ -345,6 +374,12 @@ function galleryImages(r: ResolvedAddon): PadGalleryImage[] {
 
 export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; preview?: boolean }) {
   const [mainSelection, setMainSelection] = useState<VariantSelectionDetail | null>(null)
+  // How many of the main product the shopper has in hand, off shop's purchase
+  // quantity broadcast. One until told otherwise, which is what the page says
+  // before anybody touches the stepper - and what an install whose shop is too
+  // old to publish it will say forever, where every add-on simply counts as it
+  // always has.
+  const [mainUnits, setMainUnits] = useState(1)
   const [states, setStates] = useState<Record<string, AddonState>>({})
   const [learnMore, setLearnMore] = useState<PadAddonPayload | null>(null)
   const [gallery, setGallery] = useState<{ name: string; images: PadGalleryImage[] } | null>(null)
@@ -365,6 +400,22 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     }
     window.addEventListener(VARIANT_SELECTION_EVENT, onChange)
     return () => window.removeEventListener(VARIANT_SELECTION_EVENT, onChange)
+  }, [preview, payload.productId])
+
+  // The main product's quantity, the same way: snapshot on mount, event
+  // afterwards. Only this page's own listing counts - a figure published by
+  // anything else on the page is not ours to multiply by.
+  useEffect(() => {
+    if (preview) return
+    const take = (detail: PurchaseQuantityDetail | null) => {
+      if (!detail || detail.productId !== payload.productId) return
+      setMainUnits(Math.max(1, detail.quantity))
+    }
+    const initial = getPurchaseQuantity()
+    if (initial) queueMicrotask(() => take(initial))
+    const onChange = (e: Event) => take((e as CustomEvent<PurchaseQuantityDetail>).detail)
+    window.addEventListener(PURCHASE_QUANTITY_EVENT, onChange)
+    return () => window.removeEventListener(PURCHASE_QUANTITY_EVENT, onChange)
   }, [preview, payload.productId])
 
   // The showcase tab's Add button lands here: tick that add-on open and bring
@@ -547,10 +598,16 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
 
   // Resolve one add-on (and, on recursion, a chain child) against its parent's
   // options and selection.
+  //
+  // `parentUnits` is how many of the thing above it are being bought: the main
+  // product's stepper at the top, and the parent add-on's own count one level
+  // down - four desks each wanting a pedestal want four pedestals, and a lock
+  // for each of those is four locks, not one.
   function resolveAddon(
     addon: PadAddonPayload,
     parentOptions: SvrOptionWithValues[],
     parentSelection: OptionSelection,
+    parentUnits: number,
   ): ResolvedAddon {
     const state = stateFor(addon.linkId)
     const resolved = resolveMappings(addon.config.optionMappings, parentOptions, addon.selector.options, parentSelection)
@@ -688,9 +745,25 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     const displayImages = addon.plain
       ? []
       : variant?.imageUrls?.length ? variant.imageUrls : settledVariantImages(addon.selector, selection)
-    const recommendedPerUnit = recommendedQuantityPerUnit(addon.config.quantity, parentOptions, parentSelection)
-    const perUnitQty = state.qty ?? recommendedPerUnit ?? 1
-    const note = recommendationNote(addon.config.quantity, addon.name, parentOptions, parentSelection)
+    // ---- How many ----------------------------------------------------------
+    // The recommendation is written for ONE of the main product; where the rule
+    // says so, what gets bought is that times however many are in hand. The
+    // stepper shows the figure that will actually go in the basket, so nothing
+    // is sprung on the shopper between pressing Add and reading the basket -
+    // and the moment they set their own figure it is theirs outright, main
+    // quantity or not, exactly as the main product's own stepper behaves.
+    const rule = addon.config.quantity
+    const scaleUnits = scalesWithMain(rule) ? Math.max(1, Math.floor(parentUnits) || 1) : 1
+    const recommendedPerUnit = recommendedQuantityPerUnit(rule, parentOptions, parentSelection)
+    const recommendedTotal = recommendedPerUnit == null ? null : scaledQuantity(rule, recommendedPerUnit, scaleUnits)
+    const addQty = Math.max(1, state.qty ?? recommendedTotal ?? scaledQuantity(rule, 1, scaleUnits))
+    // What that figure amounts to for one of the main product, for the line meta
+    // and the 3D context - both of which are per-unit contracts. A shopper who
+    // has typed a figure of their own may leave it with no whole answer (five
+    // screens across two desks), and the nearest whole number is a better answer
+    // there than pretending the question was not asked.
+    const perUnitQty = scaleUnits > 1 ? Math.max(1, Math.round(addQty / scaleUnits)) : addQty
+    const note = recommendationNote(rule, addon.name, parentOptions, parentSelection, scaleUnits)
 
     return {
       addon,
@@ -703,8 +776,11 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       unavailableReason: available ? null : unavailableReason,
       variant,
       displayImages,
-      perUnitQty: Math.max(1, perUnitQty),
+      addQty,
+      perUnitQty,
+      scaleUnits,
       recommendedPerUnit,
+      recommendedTotal,
       note,
     }
   }
@@ -719,9 +795,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
   const resolvedTop = useMemo(
     () => payload.addons
       .filter((addon) => isAddonApplicable(addon.config.showWhen, payload.mainOptions, mainSelectionMap))
-      .map((addon) => resolveAddon(addon, payload.mainOptions, mainSelectionMap)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- resolveAddon reads only states/payload/mainSelectionMap, all listed
-    [payload, states, mainSelectionMap],
+      .map((addon) => resolveAddon(addon, payload.mainOptions, mainSelectionMap, mainUnits)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resolveAddon reads only states/payload/mainSelectionMap/mainUnits, all listed
+    [payload, states, mainSelectionMap, mainUnits],
   )
 
   // Chain children of ENABLED, complete parents, resolved against the parent's
@@ -734,10 +810,11 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
         out.push({ ...r, depth, parent })
         if (r.state.enabled && r.selection && r.addon.children.length > 0) {
           // A chained accessory's rules read its OWN parent's options - the
-          // add-on it hangs off is the "main product" one level down.
+          // add-on it hangs off is the "main product" one level down, its own
+          // count included.
           const children = r.addon.children
             .filter((child) => isAddonApplicable(child.config.showWhen, r.addon.selector.options, r.selection!))
-            .map((child) => resolveAddon(child, r.addon.selector.options, r.selection!))
+            .map((child) => resolveAddon(child, r.addon.selector.options, r.selection!, r.addQty))
           walk(children, depth + 1, r)
         }
       }
@@ -797,7 +874,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
   function addAddonToBasket(r: ResolvedAddon & { depth: number; parent: ResolvedAddon | null }, index: number) {
     if (!r.variant) return
     const group = deterministicGroupKey(mainTargetId, [])
-    const qty = r.perUnitQty
+    const qty = r.addQty
     const forLabel = r.parent ? r.parent.addon.name : payload.productName
     const forProductId = r.parent ? r.parent.variant?.childProductId ?? r.parent.addon.addonProductId : mainTargetId
     addToCart(r.variant.childProductId, qty, {
@@ -816,7 +893,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
           ...(r.recommendedPerUnit != null ? { recommendedPerUnit: r.recommendedPerUnit } : {}),
           ...(r.note ? { recommendedNote: r.note } : {}),
         },
-        modelContext: lineModelContext(r, group, qty),
+        modelContext: lineModelContext(r, group),
       },
     })
     // A main line already in the basket joins the group now, so the nesting
@@ -1030,9 +1107,18 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
 
   function renderAddonRow(r: ResolvedAddon & { depth: number; parent: ResolvedAddon | null }, index: number) {
     const { addon, state } = r
-    const price = r.variant ? r.variant.price * r.perUnitQty : null
+    // The price of what the button will actually put in the basket, scaling
+    // included: a figure that leaves out the multiplication is a figure the
+    // shopper is owed an apology for at the basket.
+    const price = r.variant ? r.variant.price * r.addQty : null
     const from = fromPrice(addon.selector)
-    const qtyOverridden = r.recommendedPerUnit != null && state.qty != null && state.qty !== r.recommendedPerUnit
+    const qtyOverridden = r.recommendedTotal != null && state.qty != null && state.qty !== r.recommendedTotal
+    // Why the stepper opened on more than one. Said only while the figure is
+    // still ours to explain - once the shopper has set their own, the
+    // recommendation note below is the thing that has something to say.
+    const scaleNote = r.scaleUnits > 1 && !qtyOverridden
+      ? `${r.perUnitQty} for each ${r.parent ? r.parent.addon.name : payload.productName}, so ${r.addQty} for the ${r.scaleUnits} you are buying.`
+      : null
     // Only the case we can be CERTAIN the preview dropped this add-on: a
     // recommended-mode override. Free mode may still have a quantity-tagged
     // file - only the viewer knows - so no caption is safer than a wrong one.
@@ -1126,19 +1212,19 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
               <div className="pad-buyrow">
                 <div className="pad-stepper" role="group" aria-label={`Quantity of ${addon.name}`}>
                   <button
-                    type="button" aria-label="Decrease quantity" disabled={preview || r.perUnitQty <= 1}
-                    onClick={() => setState(addon.linkId, { qty: Math.max(1, r.perUnitQty - 1) })}
+                    type="button" aria-label="Decrease quantity" disabled={preview || r.addQty <= 1}
+                    onClick={() => setState(addon.linkId, { qty: Math.max(1, r.addQty - 1) })}
                   >
                     −
                   </button>
                   <input
-                    type="text" inputMode="numeric" value={r.perUnitQty} aria-label="Quantity"
+                    type="text" inputMode="numeric" value={r.addQty} aria-label="Quantity"
                     disabled={preview}
                     onChange={(e) => setState(addon.linkId, { qty: Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1) })}
                   />
                   <button
                     type="button" aria-label="Increase quantity" disabled={preview}
-                    onClick={() => setState(addon.linkId, { qty: r.perUnitQty + 1 })}
+                    onClick={() => setState(addon.linkId, { qty: r.addQty + 1 })}
                   >
                     +
                   </button>
@@ -1151,6 +1237,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                   {state.added ? 'Added ✓' : 'Add to basket'}
                 </button>
               </div>
+              {scaleNote && <p className="pad-note">{scaleNote}</p>}
               {qtyOverridden && r.note && <p className="pad-note">{r.note}</p>}
               {contextDropped && r.variant && (
                 <p className="pad-note">3D preview shows the standard arrangement.</p>

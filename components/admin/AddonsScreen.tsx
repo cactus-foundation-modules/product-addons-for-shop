@@ -10,7 +10,7 @@ const API = '/api/m/product-addons-for-shop/admin'
 type OverviewRow = {
   id: string; enabled: boolean; modelContextKey: string
   productId: string; productName: string; addonProductId: string; addonName: string
-  quantityMode: 'recommended' | 'free'; mappings: number
+  quantityMode: 'recommended' | 'free'; scaleWithMain?: boolean; mappings: number
 }
 
 type ReportRow = {
@@ -75,7 +75,12 @@ export function AddonsScreen() {
                     <td style={td}>{row.productName}</td>
                     <td style={td}>{row.addonName}</td>
                     <td style={td}>{row.enabled ? 'Yes' : 'No'}</td>
-                    <td style={td}>{row.quantityMode === 'free' ? 'Shopper decides' : 'Recommended'}</td>
+                    <td style={td}>
+                      {row.quantityMode === 'free' ? 'Shopper decides' : 'Recommended'}
+                      {/* Whether the count multiplies up with the main product,
+                          which changes what a shopper buying four ends up with. */}
+                      {row.scaleWithMain && <span style={{ color: 'var(--color-text-secondary)' }}>, per item</span>}
+                    </td>
                     <td style={td}>{row.mappings}</td>
                     <td style={td}>{row.modelContextKey || '-'}</td>
                     <td style={td}>

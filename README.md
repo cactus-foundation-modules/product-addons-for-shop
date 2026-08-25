@@ -21,7 +21,10 @@ line. Nothing is duplicated and nothing is faked.
    shopper to pick.
 3. Add-ons can be shown conditionally, so an accessory only appears when the
    choice it belongs to is actually on the menu.
-4. In the basket the add-on lines sit grouped under the product they were bought
+4. Counts are **per main product bought** unless you say otherwise: one screen
+   per desk is four screens for four desks, with the sum shown on the page
+   before anything goes in the basket.
+5. In the basket the add-on lines sit grouped under the product they were bought
    with, and each keeps its own price and shipping through to the order.
 
 ## Page builder blocks

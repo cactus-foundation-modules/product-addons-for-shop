@@ -39,10 +39,14 @@ export type PadOptionMapping = {
 }
 
 // How many of the add-on one main unit wants.
-//   'recommended' - base × (per-main-value multiplier) × main quantity, offered
-//                   as the pre-filled quantity with a gentle note when changed.
+//   'recommended' - base × (per-main-value multiplier), offered as the
+//                   pre-filled quantity with a gentle note when changed.
 //   'free'        - the shopper decides outright; the stepper starts at 1 and
 //                   no recommendation is voiced.
+//
+// Either way the figure is PER ONE of the main product. Whether the box then
+// multiplies it by how many of the main product are being bought is
+// `scaleWithMain` below.
 export type PadQuantityRule = {
   mode: 'recommended' | 'free'
   base?: number
@@ -53,6 +57,23 @@ export type PadQuantityRule = {
   perValue?: Record<string, number>
   // Optional owner wording replacing the auto-built recommendation note.
   note?: string
+  // Whether the count above is multiplied by how many of the MAIN product the
+  // shopper is buying. One screen per desk is one screen for one desk and four
+  // for four; a delivery-day upgrade bought once covers the whole order however
+  // many desks are on it. Only the owner knows which of those an accessory is,
+  // so it is a tick rather than a guess.
+  //
+  // Absent (the usual case) means the stepper's figure is what goes in the
+  // basket, exactly as before this existed. Where it is on, the shopper still
+  // sets the per-one figure and the box does the multiplication in front of
+  // them - the number that will be bought is never a surprise sprung at the
+  // basket.
+  //
+  // The main quantity is the one on the page's own stepper, read off shop's
+  // purchase-quantity broadcast. A shopper who changes it AFTER buying the
+  // accessory is caught by the basket's drift note, which has done that
+  // arithmetic since long before this setting.
+  scaleWithMain?: boolean
 }
 
 // A condition on the MAIN product's options that has to hold before the add-on

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { availableAddonValues, composeContextKey, isAddonApplicable, isAddonValueAvailable, narrowedToSingleValue } from '@/modules/product-addons-for-shop/lib/mapping'
+import {
+  availableAddonValues,
+  composeContextKey,
+  isAddonApplicable,
+  isAddonValueAvailable,
+  narrowedToSingleValue,
+  recommendationNote,
+  recommendedQuantityPerUnit,
+  scaledQuantity,
+  scalesWithMain,
+} from '@/modules/product-addons-for-shop/lib/mapping'
 import type { SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
 
 // The 3D context key an add-on announces. The case this was written for is a
@@ -210,5 +220,85 @@ describe('narrowedToSingleValue', () => {
   it('settles nothing when the rules have ruled every choice out', () => {
     const none = [{ addonOption: 'Depth', addonValueSlugs: ['60cm', '80cm'], mainOption: 'Width', mainValueSlugs: ['140cm'] }]
     expect(narrowedToSingleValue(none, PED_DEPTH, DESK, { width: 'w120' })).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Counting an add-on against how many of the main product are being bought.
+// The case this was written for: one screen per desk is one screen for one desk
+// and four for four, while a delivery-day upgrade is bought once whatever the
+// order looks like.
+// ---------------------------------------------------------------------------
+
+const SEATS: SvrOptionWithValues[] = [
+  { id: 'seats', name: 'Seats', values: [value('s2', '2-person', '2 Person'), value('s6', '6-person', '6 Person')] },
+] as unknown as SvrOptionWithValues[]
+
+describe('scalesWithMain', () => {
+  it('counts a recommended figure per main unit, and a free one not, where nobody has said', () => {
+    expect(scalesWithMain({ mode: 'recommended', base: 1 })).toBe(true)
+    expect(scalesWithMain({ mode: 'free' })).toBe(false)
+  })
+
+  it('lets the owner say otherwise on either mode', () => {
+    expect(scalesWithMain({ mode: 'recommended', base: 1, scaleWithMain: false })).toBe(false)
+    expect(scalesWithMain({ mode: 'free', scaleWithMain: true })).toBe(true)
+  })
+})
+
+describe('scaledQuantity', () => {
+  it('multiplies a per-item count by however many are being bought', () => {
+    expect(scaledQuantity({ mode: 'recommended', base: 1 }, 2, 4)).toBe(8)
+    expect(scaledQuantity({ mode: 'recommended', base: 1 }, 2, 1)).toBe(2)
+  })
+
+  it('leaves a count that is not per item exactly where it is', () => {
+    expect(scaledQuantity({ mode: 'recommended', base: 1, scaleWithMain: false }, 2, 4)).toBe(2)
+    expect(scaledQuantity({ mode: 'free' }, 3, 4)).toBe(3)
+  })
+
+  it('treats a missing or daft main count as one, so an accessory is always buyable', () => {
+    expect(scaledQuantity({ mode: 'recommended', base: 1 }, 2, 0)).toBe(2)
+    expect(scaledQuantity({ mode: 'recommended', base: 1 }, 2, Number.NaN)).toBe(2)
+    expect(scaledQuantity({ mode: 'recommended', base: 1 }, 0, 3)).toBe(3)
+  })
+})
+
+describe('recommendedQuantityPerUnit', () => {
+  it('reads the multiplier off the chosen value of the named option', () => {
+    const rule = { mode: 'recommended' as const, base: 1, perOption: 'Seats', perValue: { '2-person': 2, '6-person': 6 } }
+    expect(recommendedQuantityPerUnit(rule, SEATS, { seats: 's6' })).toBe(6)
+    // Nothing chosen yet is the base alone, not a guess at the biggest.
+    expect(recommendedQuantityPerUnit(rule, SEATS, {})).toBe(1)
+  })
+
+  it('recommends nothing at all in free mode', () => {
+    expect(recommendedQuantityPerUnit({ mode: 'free' }, SEATS, { seats: 's6' })).toBeNull()
+  })
+})
+
+describe('recommendationNote', () => {
+  it('quotes the figure for one main product where one is being bought', () => {
+    const rule = { mode: 'recommended' as const, base: 1, perOption: 'Seats', perValue: { '6-person': 3 } }
+    expect(recommendationNote(rule, 'Bench Screens', SEATS, { seats: 's6' }))
+      .toBe("We'd recommend 3 × Bench Screens for a 6 Person configuration.")
+  })
+
+  it('does the sum out loud once more than one is being bought', () => {
+    const rule = { mode: 'recommended' as const, base: 1, perOption: 'Seats', perValue: { '6-person': 3 } }
+    expect(recommendationNote(rule, 'Bench Screens', SEATS, { seats: 's6' }, 4))
+      .toBe("We'd recommend 3 × Bench Screens for each 6 Person configuration - 12 for the 4 you are buying.")
+    expect(recommendationNote({ mode: 'recommended', base: 2 }, 'Cable Tray', SEATS, {}, 3))
+      .toBe("We'd recommend 2 × Cable Tray each - 6 for the 3 you are buying.")
+  })
+
+  it('leaves the sum out of a count that is not per item', () => {
+    const rule = { mode: 'recommended' as const, base: 2, scaleWithMain: false }
+    expect(recommendationNote(rule, 'Assembly', SEATS, {}, 4)).toBe("We'd recommend 2 × Assembly.")
+  })
+
+  it('hands back the owner own wording untouched, sums and all', () => {
+    const rule = { mode: 'recommended' as const, base: 1, note: 'One per desk, always.' }
+    expect(recommendationNote(rule, 'Screen', SEATS, {}, 4)).toBe('One per desk, always.')
   })
 })

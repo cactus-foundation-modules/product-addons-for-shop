@@ -20,6 +20,7 @@ import type { CartLinePrefetchLine, CartLineResolution, CartLineResolver, CartLi
 import type { LineMetaField, ShpProduct } from '@/modules/shop/lib/types'
 import { getVariantParentsByChild } from '@/modules/shop-variations/lib/db/variants'
 import { getLinksByIds } from '@/modules/product-addons-for-shop/lib/db/links'
+import { scalesWithMain } from '@/modules/product-addons-for-shop/lib/mapping'
 import { getPadSettings } from '@/modules/product-addons-for-shop/lib/db/settings'
 import { PAD_DEFAULT_SETTINGS, PAD_META_KEY, type PadAddonLineMeta, type PadLineMeta, type PadLink, type PadSettings } from '@/modules/product-addons-for-shop/lib/types'
 
@@ -108,11 +109,21 @@ export const prefetchProductAddonLines: CartLineResolverPrefetch = async (
     if (pad.recommendedPerUnit == null) continue
     const main = store.mainsByGroup.get(pad.group)
     if (!main) continue
-    const expected = pad.recommendedPerUnit * main.quantity
+    // The stamped figure is per one of the main product. Whether the two desks
+    // in the basket want two pedestals or share one is the link's own setting,
+    // so the note asks it rather than assuming - an accessory bought once per
+    // order should not be nagged about every time the order grows. A link that
+    // has since been deleted keeps the old assumption, which is the one that
+    // suits every accessory anybody has ever attached.
+    const link = store.linksById.get(pad.linkId)
+    const scales = link ? scalesWithMain(link.config.quantity) : true
+    const expected = scales ? pad.recommendedPerUnit * main.quantity : pad.recommendedPerUnit
     if (expected > 0 && expected !== quantity) {
       store.advisoryByLine.set(
         lineKeyOf(productId, pad),
-        pad.recommendedNote ?? `We'd recommend ${expected} for the ${main.quantity} in your basket`,
+        pad.recommendedNote ?? (scales
+          ? `We'd recommend ${expected} for the ${main.quantity} in your basket`
+          : `We'd recommend ${expected}`),
       )
     }
   }

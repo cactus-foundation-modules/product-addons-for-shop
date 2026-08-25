@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { getProductsByIds } from '@/modules/shop/lib/db/products'
 import { getAllLinks } from '@/modules/product-addons-for-shop/lib/db/links'
+import { scalesWithMain } from '@/modules/product-addons-for-shop/lib/mapping'
 
 // The admin Overview tab: every link in the catalogue, named at both ends.
 export async function GET() {
@@ -20,6 +21,7 @@ export async function GET() {
       addonProductId: link.addonProductId,
       addonName: products.get(link.addonProductId)?.name ?? '(deleted product)',
       quantityMode: link.config.quantity.mode,
+      scaleWithMain: scalesWithMain(link.config.quantity),
       mappings: link.config.optionMappings.length,
     })),
   })
