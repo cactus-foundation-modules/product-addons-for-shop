@@ -25,6 +25,9 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
   // The product a loop refusal was about, so the way out can be offered by name
   // rather than as an abstract second chance.
   const [loopOffer, setLoopOffer] = useState<SearchHit | null>(null)
+  // Saved add-ons sit collapsed, but the one just added is opened straight
+  // away: nobody adds a product and then wants to press Edit on it.
+  const [openLinkId, setOpenLinkId] = useState<string | null>(null)
   const searchSeq = useRef(0)
 
   const reload = useCallback(async () => {
@@ -62,25 +65,30 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ addonProductId: hit.id, ...(hideChildAddons ? { hideChildAddons: true } : {}) }),
     })
+    const data = await res.json()
     if (!res.ok) {
-      const data = await res.json()
       setError(data.error ?? 'Could not add that product')
       // A loop is the one refusal with a way out, so it is offered here instead
       // of leaving the owner to work out that the chain is what is in the way.
       if (data.loop) setLoopOffer(hit)
       return
     }
+    setOpenLinkId(data.link?.id ?? null)
     setQuery(''); setHits([])
     await reload()
   }
 
-  async function patchLink(linkId: string, body: Record<string, unknown>) {
+  // Answers whether the write stuck, so the editor only closes itself over a
+  // save that actually landed - collapsing on a refusal would hide the draft
+  // and the reason it was turned down in the same breath.
+  async function patchLink(linkId: string, body: Record<string, unknown>): Promise<boolean> {
     setError(null)
     const res = await fetch(`${API}/links/${linkId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     })
-    if (!res.ok) { setError((await res.json()).error ?? 'Could not save'); return }
+    if (!res.ok) { setError((await res.json()).error ?? 'Could not save'); return false }
     await reload()
+    return true
   }
 
   // Swap an add-on with its neighbour and persist the whole new order. Two
@@ -124,7 +132,8 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
       <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
         Products offered alongside this one, bought together as one grouped basket. Each add-on
         keeps its own price, stock and delivery rules. Shoppers meet them in the order below, on
-        the product page and in the showcase alike - the arrows change it.
+        the product page and in the showcase alike - the arrows change it. Press Edit on one to
+        open its rules up again.
       </p>
 
       {error && (
@@ -144,6 +153,7 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
           view={view}
           index={index}
           count={payload.links.length}
+          startExpanded={view.link.id === openLinkId}
           mainOptions={payload.mainOptions}
           onPatch={(body) => patchLink(view.link.id, body)}
           onMove={(direction) => moveLink(view.link.id, direction)}
@@ -173,16 +183,20 @@ export function ProductAddonsEditor({ productId }: { productId: string }) {
   )
 }
 
-function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove }: {
+export function LinkEditor({ view, index, count, startExpanded, mainOptions, onPatch, onMove, onRemove }: {
   view: AdminSectionPayload['links'][number]
   index: number
   count: number
+  startExpanded: boolean
   mainOptions: AdminOption[]
-  onPatch: (body: Record<string, unknown>) => Promise<void>
+  onPatch: (body: Record<string, unknown>) => Promise<boolean>
   onMove: (direction: -1 | 1) => Promise<void>
   onRemove: () => Promise<void>
 }) {
   const { link } = view
+  // A saved add-on is a line in a list until somebody asks to edit it: a desk
+  // with eight of them was a page of scrolling before, all of it settled.
+  const [expanded, setExpanded] = useState(startExpanded)
   // Local drafts for the free-typed fields; selects and toggles save at once.
   const [contextKey, setContextKey] = useState(link.modelContextKey)
   const [config, setConfig] = useState<PadLinkConfig>(link.config)
@@ -261,37 +275,68 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
 
   const quantity = config.quantity
   const perOption = mainOptions.find((o) => o.name === quantity.perOption)
+  const card: React.CSSProperties = { border: '1px solid var(--color-border)', borderRadius: 10, padding: '0.75rem', display: 'grid', gap: '0.75rem' }
+
+  // The row every add-on shows in both states. Collapsed it is the whole card,
+  // so it carries the three things that must not be hidden behind Edit: that an
+  // add-on is switched off, that it has warnings against it, and that somebody
+  // left rules unsaved in it. All three are read-outs, not controls - the
+  // controls live inside, which is what makes the closed list a list.
+  const header = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+      <strong style={{ fontSize: '0.9375rem' }}>{view.addonName}</strong>
+      {!link.enabled && (
+        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Not offered on the product page</span>
+      )}
+      {!expanded && view.warnings.length > 0 && (
+        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-danger)' }}>
+          {view.warnings.length} {view.warnings.length === 1 ? 'warning' : 'warnings'}
+        </span>
+      )}
+      {!expanded && dirty && (
+        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>Unsaved changes</span>
+      )}
+      {/* Order controls, in the same shape shop's own category list uses:
+          plain arrows, disabled and faded at the ends, each naming the add-on
+          it moves so a screen reader is not left with a row of arrows. */}
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+        <span style={{ ...label, marginRight: '0.125rem' }}>{index + 1} of {count}</span>
+        <button
+          type="button" style={{ ...btn, padding: '0.375rem 0.5rem', opacity: index <= 0 ? 0.35 : 1 }}
+          disabled={index <= 0} title="Move up" aria-label={`Move ${view.addonName} up`}
+          onClick={() => onMove(-1)}
+        >
+          ↑
+        </button>
+        <button
+          type="button" style={{ ...btn, padding: '0.375rem 0.5rem', opacity: index >= count - 1 ? 0.35 : 1 }}
+          disabled={index >= count - 1} title="Move down" aria-label={`Move ${view.addonName} down`}
+          onClick={() => onMove(1)}
+        >
+          ↓
+        </button>
+        <button
+          type="button" style={btn} aria-expanded={expanded}
+          aria-label={expanded ? `Close ${view.addonName}` : `Edit ${view.addonName}`}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'Close' : 'Edit'}
+        </button>
+        <button type="button" style={{ ...btn, color: 'var(--color-danger)' }} onClick={onRemove}>Remove</button>
+      </div>
+    </div>
+  )
+
+  if (!expanded) return <div style={card}>{header}</div>
 
   return (
-    <div style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: '0.75rem', display: 'grid', gap: '0.75rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: '0.9375rem' }}>{view.addonName}</strong>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem' }}>
-          <input type="checkbox" checked={link.enabled} onChange={(e) => onPatch({ enabled: e.target.checked })} />
-          Offered on the product page
-        </label>
-        {/* Order controls, in the same shape shop's own category list uses:
-            plain arrows, disabled and faded at the ends, each naming the add-on
-            it moves so a screen reader is not left with a row of arrows. */}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
-          <span style={{ ...label, marginRight: '0.125rem' }}>{index + 1} of {count}</span>
-          <button
-            type="button" style={{ ...btn, padding: '0.375rem 0.5rem', opacity: index <= 0 ? 0.35 : 1 }}
-            disabled={index <= 0} title="Move up" aria-label={`Move ${view.addonName} up`}
-            onClick={() => onMove(-1)}
-          >
-            ↑
-          </button>
-          <button
-            type="button" style={{ ...btn, padding: '0.375rem 0.5rem', opacity: index >= count - 1 ? 0.35 : 1 }}
-            disabled={index >= count - 1} title="Move down" aria-label={`Move ${view.addonName} down`}
-            onClick={() => onMove(1)}
-          >
-            ↓
-          </button>
-          <button type="button" style={{ ...btn, color: 'var(--color-danger)' }} onClick={onRemove}>Remove</button>
-        </div>
-      </div>
+    <div style={card}>
+      {header}
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem' }}>
+        <input type="checkbox" checked={link.enabled} onChange={(e) => onPatch({ enabled: e.target.checked })} />
+        Offered on the product page
+      </label>
 
       {view.warnings.length > 0 && (
         <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'grid', gap: '0.25rem' }}>
@@ -640,10 +685,13 @@ function LinkEditor({ view, index, count, mainOptions, onPatch, onMove, onRemove
 
       {dirty && (
         <div>
+          {/* Saving closes the card, which is the whole point of the list: the
+              add-on is done with, so it goes back to being one line. A refusal
+              leaves it open, draft and error both still on screen. */}
           <button
             type="button"
             style={{ ...btn, background: 'var(--color-primary)', color: 'var(--color-on-primary)', border: 'none', fontWeight: 600 }}
-            onClick={() => onPatch({ config, modelContextKey: contextKey })}
+            onClick={async () => { if (await onPatch({ config, modelContextKey: contextKey })) setExpanded(false) }}
           >
             Save add-on rules
           </button>
