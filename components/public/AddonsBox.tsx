@@ -404,6 +404,51 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
   // that shop-variations writes. Opening a link someone shared restores the
   // same ticks, choices and quantities they were looking at.
   //
+  // The keys those parameters are spelled with. Words wherever words can say
+  // which thing is meant - the add-on's product slug, the picked value's slug -
+  // so a shared link reads as `pad=...-3-drawer-pedestal.80cm.maple` rather
+  // than a row of ids. Two spots where a slug cannot say it, and the id stands
+  // in for that one key alone:
+  //   - the same accessory linked twice on one page (its slug names both),
+  //   - one value slug on two of an add-on's own options (slugs are unique
+  //     within an option, not across a product).
+  // Ids stay readable to the codec either way, which is also what keeps links
+  // shared before this change working: their ids land in the same maps.
+  const urlKeys = useMemo(() => {
+    const linkIdByAddonKey = new Map<string, string>()
+    const addonKeyByLinkId = new Map<string, string>()
+    // `${linkId} ${key}` -> the pick it names, and the reverse.
+    const pickByValueKey = new Map<string, { optionId: string; valueId: string }>()
+    const valueKeyByValueId = new Map<string, string>()
+
+    const count = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1)
+    const addonSlugCounts = new Map<string, number>()
+    for (const addon of addonsByLinkId.values()) if (addon.slug) count(addonSlugCounts, addon.slug)
+
+    for (const [linkId, addon] of addonsByLinkId) {
+      const addonKey = addon.slug && addonSlugCounts.get(addon.slug) === 1 ? addon.slug : linkId
+      addonKeyByLinkId.set(linkId, addonKey)
+      linkIdByAddonKey.set(addonKey, linkId)
+      linkIdByAddonKey.set(linkId, linkId)
+
+      const valueSlugCounts = new Map<string, number>()
+      for (const option of addon.selector.options) {
+        for (const value of option.values) if (value.slug) count(valueSlugCounts, value.slug)
+      }
+      for (const option of addon.selector.options) {
+        for (const value of option.values) {
+          const pick = { optionId: option.id, valueId: value.id }
+          const valueKey = value.slug && valueSlugCounts.get(value.slug) === 1 ? value.slug : value.id
+          valueKeyByValueId.set(`${linkId} ${value.id}`, valueKey)
+          pickByValueKey.set(`${linkId} ${valueKey}`, pick)
+          pickByValueKey.set(`${linkId} ${value.id}`, pick)
+        }
+      }
+    }
+    return { linkIdByAddonKey, addonKeyByLinkId, pickByValueKey, valueKeyByValueId }
+  }, [addonsByLinkId])
+
+  //
   // Restore once after mount. This is a client island, so the server HTML
   // opens with nothing ticked and the shared state lands a beat later - the
   // acceptable cost of keeping the whole restore in one place; the social
@@ -420,25 +465,21 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
     queueMicrotask(() => setStates((prev) => {
       const next = { ...prev }
       for (const entry of entries) {
-        const addon = addonsByLinkId.get(entry.linkId)
-        if (!addon) continue
-        const valueToOption = new Map<string, string>()
-        for (const option of addon.selector.options) {
-          for (const value of option.values) valueToOption.set(value.id, option.id)
-        }
+        const linkId = urlKeys.linkIdByAddonKey.get(entry.addonKey)
+        if (!linkId) continue
         const chosen: Record<string, string> = {}
         const overridden: Record<string, boolean> = {}
-        for (const valueId of entry.valueIds) {
-          const optionId = valueToOption.get(valueId)
-          if (!optionId) continue
-          chosen[optionId] = valueId
+        for (const valueKey of entry.valueKeys) {
+          const pick = urlKeys.pickByValueKey.get(`${linkId} ${valueKey}`)
+          if (!pick) continue
+          chosen[pick.optionId] = pick.valueId
           // A pick worth writing into a link was the shopper's own, so it
           // restores as an override; where it merely equals what the option
           // would follow anyway, resolveAddon reads that as following again.
-          overridden[optionId] = true
+          overridden[pick.optionId] = true
         }
-        next[entry.linkId] = {
-          ...(next[entry.linkId] ?? { enabled: false, chosen: {}, overridden: {}, qty: null, added: false }),
+        next[linkId] = {
+          ...(next[linkId] ?? { enabled: false, chosen: {}, overridden: {}, qty: null, added: false }),
           enabled: true,
           chosen,
           overridden,
@@ -447,7 +488,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       }
       return next
     }))
-  }, [preview, addonsByLinkId])
+  }, [preview, urlKeys])
 
   // Write on every change AFTER the mount pass - the first run still sees the
   // pre-restore (empty) state, and writing that would wipe the very parameters
@@ -465,15 +506,25 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
       const url = new URL(window.location.href)
       url.searchParams.delete(PAD_URL_PARAM)
       for (const [linkId, state] of Object.entries(states)) {
-        if (!state.enabled || !addonsByLinkId.has(linkId)) continue
-        url.searchParams.append(PAD_URL_PARAM, encodePadParam({ linkId, valueIds: Object.values(state.chosen), qty: state.qty }))
+        const addon = addonsByLinkId.get(linkId)
+        const addonKey = urlKeys.addonKeyByLinkId.get(linkId)
+        if (!state.enabled || !addon || !addonKey) continue
+        // Picks in the add-on's own option order, so the same configuration
+        // always spells itself the same way however the shopper got there.
+        const valueKeys: string[] = []
+        for (const option of addon.selector.options) {
+          const valueId = state.chosen[option.id]
+          const valueKey = valueId ? urlKeys.valueKeyByValueId.get(`${linkId} ${valueId}`) : undefined
+          if (valueKey) valueKeys.push(valueKey)
+        }
+        url.searchParams.append(PAD_URL_PARAM, encodePadParam({ addonKey, valueKeys, qty: state.qty }))
       }
       const next = url.toString()
       if (next !== window.location.href) window.history.replaceState(window.history.state, '', next)
     } catch {
       // A URL we cannot rewrite is a cosmetic loss, never a broken box.
     }
-  }, [preview, states, addonsByLinkId])
+  }, [preview, states, addonsByLinkId, urlKeys])
 
   // The main selection as option id -> value id, order-independent: each
   // chosen value id belongs to exactly one option.

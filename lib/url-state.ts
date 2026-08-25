@@ -3,30 +3,49 @@
 // picks do (shop-variations writes those; this module writes its own).
 //
 // Format: one `pad` parameter per enabled add-on, dot-joined:
-//   pad=<linkId>[.<valueId>...][.q<qty>]
-// - linkId names the pad_links row (unique across the whole chain, children
-//   included), value ids are the shopper's own picks on that add-on's options,
-//   and a final `q<digits>` segment carries an overridden quantity. All three
-//   are ids rather than slugs because an add-on's option values are resolved
-//   against ITS product's options, and only ids are unambiguous there.
-// - Dots are safe separators: link and value ids are cuids (letters and
-//   digits only), and `q<digits>` can never be one.
+//   pad=<addonKey>[.<valueKey>...][.q<qty>]
+// - The add-on key names the accessory (its product slug, e.g.
+//   `impulse-desk-high-3-drawer-office-pedestal`), the value keys are the
+//   shopper's own picks on that add-on's options (value slugs, e.g. `80cm`),
+//   and a final `q<digits>` segment carries an overridden quantity. Readable by
+//   design: these URLs get shared, pasted into emails and read out over the
+//   phone, and a row of uuids helps nobody.
+// - Keys fall back to ids where a slug cannot say which thing is meant: two
+//   links to the same add-on product on one page, or one value slug appearing
+//   on two of an add-on's options. The caller decides that (it is the side
+//   holding the payload); this file just carries whatever key it is handed.
+// - Links shared before slugs went in carry link ids and value ids in exactly
+//   those positions, so they still decode - the reader resolves a key as an id
+//   first, then as a slug.
+// - Dots are safe separators: slugs and ids are letters, digits and hyphens
+//   only.
 //
-// Decoding is fail-safe by construction: an unknown link id, a foreign value
-// id or a mangled segment simply restores nothing, never guesses.
+// Decoding is fail-safe by construction: an unknown add-on key, a foreign value
+// key or a mangled segment simply restores nothing, never guesses.
 export const PAD_URL_PARAM = 'pad'
 
+// A value slug is free to be the word "q" and a number, which is exactly what
+// the quantity segment looks like. Where one lands last, the encoder writes
+// this sentinel behind it so the reader has something else to take as the
+// quantity, and reads it back as "no override".
+const QTY_SEGMENT = /^q\d+$/
+const QTY_NONE = 'q0'
+
 export type PadUrlEntry = {
-  linkId: string
-  valueIds: string[]
+  // The add-on: its product slug, or its pad_links row id where the slug is
+  // ambiguous (or the link predates slugs).
+  addonKey: string
+  // The shopper's picks: value slugs, or value ids on the same terms.
+  valueKeys: string[]
   // Quantity per main unit the shopper set by hand; null = follow the
   // recommendation (which is not worth writing down - it recomputes).
   qty: number | null
 }
 
 export function encodePadParam(entry: PadUrlEntry): string {
-  const segments = [entry.linkId, ...entry.valueIds]
+  const segments = [entry.addonKey, ...entry.valueKeys]
   if (entry.qty != null && Number.isFinite(entry.qty) && entry.qty >= 1) segments.push(`q${Math.floor(entry.qty)}`)
+  else if (QTY_SEGMENT.test(segments[segments.length - 1] ?? '') && segments.length > 1) segments.push(QTY_NONE)
   return segments.join('.')
 }
 
@@ -34,15 +53,16 @@ export function decodePadParams(values: string[]): PadUrlEntry[] {
   const entries: PadUrlEntry[] = []
   for (const value of values) {
     const segments = value.split('.').filter(Boolean)
-    const linkId = segments.shift()
-    if (!linkId) continue
+    const addonKey = segments.shift()
+    if (!addonKey) continue
     let qty: number | null = null
     const lastSegment = segments[segments.length - 1]
-    if (lastSegment && /^q\d+$/.test(lastSegment)) {
-      qty = Math.max(1, parseInt(lastSegment.slice(1), 10))
+    if (lastSegment && QTY_SEGMENT.test(lastSegment)) {
+      const parsed = parseInt(lastSegment.slice(1), 10)
+      qty = parsed >= 1 ? parsed : null
       segments.pop()
     }
-    entries.push({ linkId, valueIds: segments, qty })
+    entries.push({ addonKey, valueKeys: segments, qty })
   }
   return entries
 }
