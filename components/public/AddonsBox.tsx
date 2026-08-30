@@ -1234,7 +1234,12 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                   disabled={preview || !r.variant || !r.variant.inStock}
                   onClick={() => addAddonToBasket(r, index)}
                 >
-                  {state.added ? 'Added ✓' : 'Add to basket'}
+                  {/* "to basket" is dropped, not wrapped, once the row is too
+                      narrow to hold the whole phrase beside the quantity pill -
+                      see .pad-addbtn-tail. A button reading "Add" over a second
+                      line saying "to basket" is the worst of both: it says no
+                      more than "Add" does and it makes the row taller. */}
+                  {state.added ? 'Added ✓' : <>Add<span className="pad-addbtn-tail"> to basket</span></>}
                 </button>
               </div>
               {scaleNote && <p className="pad-note">{scaleNote}</p>}
@@ -1335,7 +1340,7 @@ const PAD_BOX_CSS = `
   .pad-learn{grid-row:1;padding:0.375rem 0.75rem}
 }
 .pad-body{display:grid;gap:0.625rem;padding-left:1.7rem}
-.pad-qty{display:grid;gap:0.3rem}
+.pad-qty{display:grid;gap:0.3rem;container-type:inline-size}
 /* The choices sit AFTER the option's name, wrapping around it, exactly as the
    main product's options do. The name is floated rather than a flex item: a
    float only shortens the line boxes beside it, so the first row of choices
@@ -1403,7 +1408,16 @@ const PAD_BOX_CSS = `
 .pad-stepper input:focus{outline:none}
 /* The pill radius shop's own .spd-add wears, so the add-on's add button is the
    same shape as the Add to basket button above it rather than a squarer cousin. */
-.pad-addbtn{flex:1;background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:9999px;padding:0.75rem 1.25rem;font:inherit;font-weight:600;cursor:pointer}
+.pad-addbtn{flex:1;background:var(--color-primary);color:var(--color-on-primary);border:none;border-radius:9999px;padding:0.75rem 1.25rem;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}
+/* The quantity pill is 146px and the gap 12px, so the button gets the row's
+   width less 158 - and once that drops under about 146px the phrase no longer
+   fits beside it. Rendered and swept rather than reasoned about: the second line
+   appears at 302px and below with a system face, and the few pixels of headroom
+   here are for a heavier one, since dropping "to basket" a shade early costs
+   nothing and dropping it a shade late is the bug. Measured off the row's own
+   container rather than the viewport, because what decides it is the width this
+   box actually has - a phone, a narrow column, a two-up layout all differ. */
+@container (max-width:310px){.pad-addbtn-tail{display:none}}
 .pad-addbtn:disabled{background:var(--color-bg-subtle);color:var(--color-text-muted);cursor:not-allowed}
 .pad-note,.pad-hint{margin:0;font-size:0.75rem;color:var(--color-text-muted)}
 .pad-hint-opt{clear:both;padding-top:0.25rem}
