@@ -4,6 +4,7 @@
 import { currentProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
 import { getProductBySlugCached } from '@/modules/shop/lib/db/products'
 import { buildBoxPayload } from '@/modules/product-addons-for-shop/lib/payload'
+import { getResponsiveBreakpoints } from '@/lib/puck/responsiveValue'
 import { AddonsBox } from '@/modules/product-addons-for-shop/components/public/AddonsBox'
 import { shopProductAddonsPuckComponent, type ShopProductAddonsProps } from '@/modules/product-addons-for-shop/components/puck/ShopProductAddons'
 
@@ -19,7 +20,15 @@ async function ShopProductAddonsRsc(props: ShopProductAddonsProps) {
   // The block's own heading wins where one is set; blank falls through to the
   // noun from Add-ons settings, which is what the box has always printed.
   const heading = props.heading?.trim()
-  return <AddonsBox payload={heading ? { ...payload, nounPlural: heading } : payload} />
+  return (
+    <AddonsBox
+      payload={heading ? { ...payload, nounPlural: heading } : payload}
+      swatchPreview={props.swatchPreview}
+      // Resolved here rather than in the island: the client bundle gets its own
+      // copy of core's responsive module state and nothing ever sets it there.
+      breakpoints={getResponsiveBreakpoints()}
+    />
+  )
 }
 
 export const shopProductAddonsPuckRscComponent = {

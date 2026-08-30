@@ -7,6 +7,7 @@
 
 import type { SvrOptionWithValues, VariantSelectorPayload } from '@/modules/shop-variations/lib/types'
 import type { ProductUrlStyle } from '@/modules/shop/lib/product-url'
+import { normalizeResponsiveValue, pickResponsive, type Device, type ResponsiveValue } from '@/lib/puck/responsiveValue'
 
 // How one of the add-on product's options gets its value when the add-on is
 // bought from the main product's page:
@@ -281,3 +282,60 @@ export type PadAddonLineMeta = {
 export type PadLineMeta = PadMainLineMeta | PadAddonLineMeta
 
 export const PAD_META_KEY = 'productAddons'
+
+// Whether pointing at one of an add-on's colour or image choices pops a bigger
+// look at it - the full picture, or a block of colour big enough to judge. Held
+// per screen size, because the honest answer differs by screen: on a desktop the
+// bigger look is a hover away and costs the shopper nothing, while a phone has no
+// hover at all - pressing a swatch to choose it IS the hover, so a 200px panel
+// lands over the page whether it was wanted or not.
+//
+// Deliberately the box's own type rather than one borrowed from shop-variations.
+// The two boxes draw their chips from entirely separate markup, and only the
+// shape of the setting is shared - which is core's, not either module's.
+export type PadSwatchPreview = 'show' | 'hide'
+export type PadSwatchPreviewSetting = ResponsiveValue<PadSwatchPreview> | PadSwatchPreview
+export type PadSwatchPreviewShown = Record<Device, boolean>
+
+export function resolvePadSwatchPreview(value: PadSwatchPreviewSetting | undefined): PadSwatchPreviewShown {
+  const rv = normalizeResponsiveValue<PadSwatchPreview>(value)
+  const at = (d: Device) => (pickResponsive(rv, d) ?? 'show') === 'show'
+  return { desktop: at('desktop'), tablet: at('tablet'), mobile: at('mobile') }
+}
+
+// Which of the three breakpoints have it switched off, as classes for the box's
+// root, and the media rules that act on them. Nothing is emitted for a box left
+// alone, so it renders byte-identically to before this setting existed; a box
+// switched off everywhere never builds the preview at all (see AddonsBox), so it
+// emits nothing either.
+//
+// The breakpoint widths arrive as an argument: the box is a client island and its
+// copy of core's responsive module state is never set, so the numbers travel from
+// the server.
+const PAD_PREVIEW_OFF_CLASS: Record<Device, string> = { desktop: 'pad-pv-off-d', tablet: 'pad-pv-off-t', mobile: 'pad-pv-off-m' }
+const PAD_DEVICES: Device[] = ['desktop', 'tablet', 'mobile']
+
+// Same ranges core's own media helpers use, including the 0.02px offset that
+// keeps a screen sitting exactly on a breakpoint in ONE band rather than two.
+function padPreviewMediaQuery(device: Device, bp: { mobile: number; tablet: number }): string {
+  if (device === 'mobile') return `@media(max-width:${bp.mobile}px)`
+  if (device === 'tablet') return `@media(min-width:${bp.mobile + 0.02}px) and (max-width:${bp.tablet}px)`
+  return `@media(min-width:${bp.tablet + 0.02}px)`
+}
+
+export function padSwatchPreviewOffClasses(shown: PadSwatchPreviewShown): string {
+  return PAD_DEVICES.filter((d) => !shown[d]).map((d) => PAD_PREVIEW_OFF_CLASS[d]).join(' ')
+}
+
+// No !important anywhere: unlike the main product's chip, everything here is
+// drawn from classes rather than inline styles, so a plain selector wins on its
+// own. The chip keeps its name - that is the whole point of it - and only drops
+// back to the plain bordered label the pill choices already use.
+export function padSwatchPreviewCss(shown: PadSwatchPreviewShown, bp: { mobile: number; tablet: number }): string {
+  return PAD_DEVICES.filter((d) => !shown[d]).map((d) => {
+    const c = `.${PAD_PREVIEW_OFF_CLASS[d]}`
+    return `${padPreviewMediaQuery(d, bp)}{`
+      + `${c} .pad-peekimg,${c} .pad-peekcolour{display:none}`
+      + `${c} .pad-chip{gap:0;border-radius:var(--radius-sm,4px);box-shadow:var(--shadow-md);padding:2px 8px}}`
+  }).join('\n')
+}

@@ -2,7 +2,8 @@
 // payload needs the database, and the editor canvas gets none of it. Markup
 // mirrors the live box's shell so the layout reads true in the editor.
 import { AddonsBox } from '@/modules/product-addons-for-shop/components/public/AddonsBox'
-import type { PadBoxPayload } from '@/modules/product-addons-for-shop/lib/types'
+import type { PadBoxPayload, PadSwatchPreviewSetting } from '@/modules/product-addons-for-shop/lib/types'
+import { ResponsiveSelectField } from '@/lib/puck/fields/registry'
 
 const SAMPLE: PadBoxPayload = {
   productId: 'sample',
@@ -40,18 +41,31 @@ export type ShopProductAddonsProps = {
   // which is what the box has always printed. A shop calling them Accessories
   // everywhere but Goes well with here could not say so before.
   heading?: string
+  swatchPreview?: PadSwatchPreviewSetting
 }
 
 export function ShopProductAddonsEditor(props: ShopProductAddonsProps) {
   const payload = props.heading?.trim() ? { ...SAMPLE, nounPlural: props.heading.trim() } : SAMPLE
-  return <AddonsBox payload={payload} preview />
+  return <AddonsBox payload={payload} preview swatchPreview={props.swatchPreview} />
 }
 
 export const shopProductAddonsPuckComponent = {
   label: 'Shop: Product add-ons',
   fields: {
     heading: { type: 'text' as const, label: 'Heading (blank uses the name from Add-ons settings)' },
+    // Per screen size, and set here rather than in Add-ons settings because it is
+    // a question about how this page looks, not about what the add-ons are - the
+    // same reason and the same control the main product's options carry.
+    swatchPreview: {
+      type: 'custom' as const,
+      label: 'Colour & image previews',
+      render: ResponsiveSelectField,
+      options: [
+        { label: 'Show a bigger look', value: 'show' },
+        { label: 'No preview', value: 'hide' },
+      ],
+    },
   },
-  defaultProps: { heading: '' } as ShopProductAddonsProps,
+  defaultProps: { heading: '', swatchPreview: { desktop: 'show' } } as ShopProductAddonsProps,
   render: ShopProductAddonsEditor,
 }

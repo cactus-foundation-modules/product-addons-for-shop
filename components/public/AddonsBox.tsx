@@ -60,7 +60,10 @@ import {
   dedupeGalleryImages,
   type PadGalleryImage,
 } from '@/modules/product-addons-for-shop/components/public/AddonImageModal'
-import { PAD_META_KEY, type PadAddonPayload, type PadBoxPayload } from '@/modules/product-addons-for-shop/lib/types'
+import {
+  PAD_META_KEY, padSwatchPreviewCss, padSwatchPreviewOffClasses, resolvePadSwatchPreview,
+  type PadAddonPayload, type PadBoxPayload, type PadSwatchPreviewSetting,
+} from '@/modules/product-addons-for-shop/lib/types'
 import { PAD_URL_PARAM, decodePadParams, encodePadParam } from '@/modules/product-addons-for-shop/lib/url-state'
 import { productHref } from '@/modules/shop/lib/product-url'
 
@@ -372,7 +375,21 @@ function galleryImages(r: ResolvedAddon): PadGalleryImage[] {
   ])
 }
 
-export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; preview?: boolean }) {
+export function AddonsBox({ payload, preview, swatchPreview, breakpoints = { mobile: 640, tablet: 1024 } }: {
+  payload: PadBoxPayload
+  preview?: boolean
+  swatchPreview?: PadSwatchPreviewSetting
+  // The site's own tablet/mobile widths, resolved on the server and handed over -
+  // see padSwatchPreviewCss for why they cannot be read here.
+  breakpoints?: { mobile: number; tablet: number }
+}) {
+  // Off at every width means the enlarged look is never built: the chip is still
+  // there with the value's name in it, which is the part a shopper needs, and the
+  // 200px picture simply is not in the markup.
+  const previewShown = resolvePadSwatchPreview(swatchPreview)
+  const anyPreview = previewShown.desktop || previewShown.tablet || previewShown.mobile
+  const previewOffClasses = padSwatchPreviewOffClasses(previewShown)
+  const previewCss = padSwatchPreviewCss(previewShown, breakpoints)
   const [mainSelection, setMainSelection] = useState<VariantSelectionDetail | null>(null)
   // How many of the main product the shopper has in hand, off shop's purchase
   // quantity broadcast. One until told otherwise, which is what the page says
@@ -974,7 +991,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
           {lockedSwatch && (
             <PadPeek
               label={entry.lockedValue!.label}
-              preview={lockedIsImage
+              preview={!anyPreview ? null : lockedIsImage
                 ? <PadSwatchImg src={lockedSwatch} className="pad-peekimg" />
                 : <span aria-hidden className="pad-peekcolour" style={{ background: lockedSwatch }} />}
             >
@@ -1052,7 +1069,7 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
                 // a usable block of the colour) and the value's name under it.
                 <PadPeek
                   key={value.id} label={valueLabel}
-                  preview={isImage
+                  preview={!anyPreview ? null : isImage
                     ? <PadSwatchImg src={swatchUrl!} className="pad-peekimg" />
                     : swatchUrl ? <span aria-hidden className="pad-peekcolour" style={{ background: swatchUrl }} /> : null}
                 >
@@ -1273,8 +1290,9 @@ export function AddonsBox({ payload, preview }: { payload: PadBoxPayload; previe
   // model) they are changing has to stay in sight while they change it.
   // GALLERY_HOLD_ATTR is shop-variations' published seam for exactly that.
   return (
-    <div ref={boxRef} className="pad-box" {...{ [GALLERY_HOLD_ATTR]: '' }}>
+    <div ref={boxRef} className={`pad-box${previewOffClasses ? ` ${previewOffClasses}` : ''}`} {...{ [GALLERY_HOLD_ATTR]: '' }}>
       <style dangerouslySetInnerHTML={{ __html: PAD_BOX_CSS }} />
+      {previewCss && <style dangerouslySetInnerHTML={{ __html: previewCss }} />}
       <h3 className="pad-heading">{payload.nounPlural}</h3>
       {resolvedAll.map((r, index) => renderAddonRow(r, index))}
       {learnMore && (
