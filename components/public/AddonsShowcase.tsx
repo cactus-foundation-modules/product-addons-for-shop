@@ -1,5 +1,7 @@
 'use client'
 
+import { responsiveImg, CARD_WIDTH_LADDER, type ImageResizing } from '@/lib/media/resize-url'
+
 // The showcase: one card per add-on - picture, name, blurb, from-price - with
 // "Learn more" (the chrome-free description modal) and "Add", which scrolls
 // back to the purchase area and ticks that add-on open in the box (see
@@ -81,7 +83,7 @@ export type ShowcasePayload = {
   productUrlStyle?: ProductUrlStyle
 }
 
-export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload; preview?: boolean }) {
+export function AddonsShowcase({ payload, preview, resizing }: { payload: ShowcasePayload; preview?: boolean; resizing?: ImageResizing }) {
   const [learnMore, setLearnMore] = useState<ShowcaseCard | null>(null)
   const [gallery, setGallery] = useState<{ name: string; images: PadGalleryImage[] } | null>(null)
   // What the add-ons box has settled each add-on on, if there is a box on this
@@ -186,12 +188,14 @@ export function AddonsShowcase({ payload, preview }: { payload: ShowcasePayload;
                 type="button" className="pads-imgbtn" disabled={preview} aria-label={`See pictures of ${card.name}`}
                 onClick={() => setGallery({ name: card.name, images: galleryImages })}
               >
+                {/* A card is ~305px wide; these pictures are routinely 1,700px.
+                    Emits no srcset unless the owner has switched resizing on. */}
                 {/* eslint-disable-next-line @next/next/no-img-element -- product media is an absolute storage URL */}
-                <img className="pads-img" src={shownUrl} alt="" loading="lazy" />
+                <img className="pads-img" {...responsiveImg(shownUrl, '(max-width: 700px) 45vw, 305px', CARD_WIDTH_LADDER, resizing)} alt="" loading="lazy" />
               </button>
             ) : shownUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- product media is an absolute storage URL
-              <img className="pads-img" src={shownUrl} alt="" loading="lazy" />
+              <img className="pads-img" {...responsiveImg(shownUrl, '(max-width: 700px) 45vw, 305px', CARD_WIDTH_LADDER, resizing)} alt="" loading="lazy" />
             ) : (
               <div className="pads-img pads-img-empty" aria-hidden="true" />
             )}

@@ -1,5 +1,6 @@
 // Editor half of the hand-placed showcase block: static sample cards, inert.
 import { AddonsShowcase, type ShowcasePayload } from '@/modules/product-addons-for-shop/components/public/AddonsShowcase'
+import type { ImageResizing } from '@/lib/media/resize-url'
 
 const SAMPLE: ShowcasePayload = {
   nounPlural: 'Add-ons',
@@ -15,6 +16,10 @@ export type ShopAddonsShowcaseProps = {
   // 0 or blank means every card the product has, which is the old behaviour.
   // A product with a dozen accessories can otherwise bury the page it is on.
   maxCards?: number
+  // Puck's own channel for site-wide values a block cannot fetch for itself. Read
+  // for `imageResizing`, so a showcase card can ask for its picture at the size it
+  // is drawn - see lib/media/resize-url.ts.
+  puck?: { metadata?: { imageResizing?: ImageResizing } }
 }
 
 export function ShopAddonsShowcaseEditor(props: ShopAddonsShowcaseProps) {

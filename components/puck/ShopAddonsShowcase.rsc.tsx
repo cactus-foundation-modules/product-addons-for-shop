@@ -18,6 +18,12 @@ async function ShopAddonsShowcaseRsc(props: ShopAddonsShowcaseProps) {
   const cap = Math.max(0, Math.floor(Number(props.maxCards)) || 0)
   return (
     <AddonsShowcase
+      // Whether pictures may be asked for at the size they are drawn. A showcase
+      // card is about 305px wide and the pictures on it are routinely 1,700px, so
+      // this is the difference between 130 KB and a tenth of that per card. Passed
+      // down because AddonsShowcase is a client component and the setting lives in
+      // the site config - see lib/media/resize-url.ts.
+      resizing={props.puck?.metadata?.imageResizing}
       payload={{
         ...payload,
         ...(heading ? { nounPlural: heading } : null),
