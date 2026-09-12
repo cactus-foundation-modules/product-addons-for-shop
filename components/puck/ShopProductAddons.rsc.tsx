@@ -24,6 +24,10 @@ async function ShopProductAddonsRsc(props: ShopProductAddonsProps) {
     <AddonsBox
       payload={heading ? { ...payload, nounPlural: heading } : payload}
       swatchPreview={props.swatchPreview}
+      // The picker's row thumbnails are 44px boxes; without this they were
+      // fetched at the full storage size, which on a product with a couple of
+      // accessories was the single heaviest thing left on the page.
+      resizing={props.puck?.metadata?.imageResizing}
       // Resolved here rather than in the island: the client bundle gets its own
       // copy of core's responsive module state and nothing ever sets it there.
       breakpoints={getResponsiveBreakpoints()}

@@ -4,6 +4,7 @@
 import { AddonsBox } from '@/modules/product-addons-for-shop/components/public/AddonsBox'
 import type { PadBoxPayload, PadSwatchPreviewSetting } from '@/modules/product-addons-for-shop/lib/types'
 import { ResponsiveSelectField } from '@/lib/puck/fields/registry'
+import type { ImageResizing } from '@/lib/media/resize-url'
 
 const SAMPLE: PadBoxPayload = {
   productId: 'sample',
@@ -42,6 +43,10 @@ export type ShopProductAddonsProps = {
   // everywhere but Goes well with here could not say so before.
   heading?: string
   swatchPreview?: PadSwatchPreviewSetting
+  // Puck's channel for site-wide values a block cannot fetch itself. Read for
+  // `imageResizing`, so the picker's 44px row thumbnails can be asked for at
+  // that size rather than at the full storage size.
+  puck?: { metadata?: { imageResizing?: ImageResizing } }
 }
 
 export function ShopProductAddonsEditor(props: ShopProductAddonsProps) {

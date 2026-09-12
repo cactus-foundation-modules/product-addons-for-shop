@@ -66,6 +66,7 @@ import {
 } from '@/modules/product-addons-for-shop/lib/types'
 import { PAD_URL_PARAM, decodePadParams, encodePadParam } from '@/modules/product-addons-for-shop/lib/url-state'
 import { productHref } from '@/modules/shop/lib/product-url'
+import { resizedImageSrc, type ImageResizing } from '@/lib/media/resize-url'
 
 // Per-addon UI state, keyed by linkId (chain rows included - link ids are
 // unique across the whole tree).
@@ -375,10 +376,20 @@ function galleryImages(r: ResolvedAddon): PadGalleryImage[] {
   ])
 }
 
-export function AddonsBox({ payload, preview, swatchPreview, breakpoints = { mobile: 640, tablet: 1024 } }: {
+// The row thumbnail's drawn size, used both in the stylesheet below and to work
+// out the source to ask for. One number, so a change to the box cannot leave the
+// picture being fetched at the old size.
+const PAD_THUMB_PX = 44
+
+export function AddonsBox({ payload, preview, swatchPreview, resizing, breakpoints = { mobile: 640, tablet: 1024 } }: {
   payload: PadBoxPayload
   preview?: boolean
   swatchPreview?: PadSwatchPreviewSetting
+  // Whether pictures may be asked for at the size they are drawn. The row
+  // thumbnail is a 44px box and these pictures are routinely 1,700px, which was
+  // 130 KB apiece to fill it. Handed down because this is a client component
+  // and the setting lives in the site config - see lib/media/resize-url.ts.
+  resizing?: ImageResizing
   // The site's own tablet/mobile widths, resolved on the server and handed over -
   // see padSwatchPreviewCss for why they cannot be read here.
   breakpoints?: { mobile: number; tablet: number }
@@ -1165,7 +1176,7 @@ export function AddonsBox({ payload, preview, swatchPreview, breakpoints = { mob
               onClick={() => setGallery({ name: addon.name, images })}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- product media is an absolute storage URL */}
-              <img className="pad-thumb" src={thumbUrl} alt="" loading="lazy" />
+              <img className="pad-thumb" src={resizedImageSrc(thumbUrl, PAD_THUMB_PX * 2, resizing)} alt="" loading="lazy" />
               <span className="pad-thumbzoom" aria-hidden="true">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <circle cx="10.5" cy="10.5" r="6.5" />
@@ -1175,7 +1186,7 @@ export function AddonsBox({ payload, preview, swatchPreview, breakpoints = { mob
             </button>
           ) : thumbUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- product media is an absolute storage URL
-            <img className="pad-thumb" src={thumbUrl} alt="" loading="lazy" />
+            <img className="pad-thumb" src={resizedImageSrc(thumbUrl, PAD_THUMB_PX * 2, resizing)} alt="" loading="lazy" />
           ) : (
             <span className="pad-thumb pad-thumb-empty" aria-hidden="true" />
           )}
@@ -1322,7 +1333,7 @@ const PAD_BOX_CSS = `
 .pad-head>.pad-thumb,.pad-head>.pad-thumbbtn{grid-row:1/3}
 .pad-title{grid-column:3/5;grid-row:1}
 .pad-price{grid-column:3;grid-row:2}
-.pad-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--color-bg-subtle);display:block}
+.pad-thumb{width:${PAD_THUMB_PX}px;height:${PAD_THUMB_PX}px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--color-bg-subtle);display:block}
 .pad-thumb-empty{display:inline-block}
 /* The picture is its own control now - it opens the add-on's pictures rather
    than ticking the box - so it says so on hover, and carries a small magnifier
