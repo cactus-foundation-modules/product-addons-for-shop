@@ -11,6 +11,8 @@ import { useEffect, useMemo, useState } from 'react'
 // breakpoints-shared touches no database, so a client component may import it
 // without dragging prisma into the page builder's bundle.
 import { DEFAULT_BREAKPOINTS, type Breakpoints } from '@/modules/shop/lib/breakpoints-shared'
+import { TaxViewText } from '@/modules/shop/components/public/TaxViewText'
+import type { TaxViewSide } from '@/modules/shop/lib/tax-view-shared'
 import { focusAddon } from '@/modules/product-addons-for-shop/lib/accessory-focus'
 import { isAddonApplicable } from '@/modules/product-addons-for-shop/lib/mapping'
 import type { PadShowWhenRule } from '@/modules/product-addons-for-shop/lib/types'
@@ -53,6 +55,10 @@ export type ShowcaseCard = {
   // simply has no badge, as it always did.
   outOfStock?: boolean
   fromPriceFormatted: string
+  // The from-price line on each side of tax, where the shopper's VAT switch is
+  // on (shop's lib/tax-view-shared.ts). Optional: absent where it is off, and on
+  // a payload serialised before this shipped.
+  fromPriceSides?: { defaultSide: TaxViewSide; ex: string; inc: string }
   // The conditions on the MAIN product that have to hold before this accessory
   // is applicable at all - the same rules the purchase box gates on, so a
   // shopper is never shown a card here for something the box below refuses to
@@ -219,7 +225,11 @@ export function AddonsShowcase({ payload, preview, resizing }: { payload: Showca
                   {card.outOfStock && <span className="pads-oos">Out of stock</span>}
                 </span>
                 {card.shortDescription && <span className="pads-blurb">{card.shortDescription}</span>}
-                <span className="pads-price">{card.fromPriceFormatted}</span>
+                <span className="pads-price">
+                  {card.fromPriceSides
+                    ? <TaxViewText defaultSide={card.fromPriceSides.defaultSide} excluding={card.fromPriceSides.ex} including={card.fromPriceSides.inc} />
+                    : card.fromPriceFormatted}
+                </span>
               </button>
               {card.outOfStock && <p className="pads-staff">Shoppers cannot see this one while it is out of stock.</p>}
               <div className="pads-actions">

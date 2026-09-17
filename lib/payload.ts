@@ -3,7 +3,7 @@ import { getPrimaryProductImages } from '@/modules/shop/lib/db/products'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
 import { effectivePrice } from '@/modules/shop/lib/pricing'
-import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
+import { makeDisplayAdjuster, productTaxView, resolveTaxDisplay, type TaxDisplay } from '@/modules/shop/lib/tax-display'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getVariantSelectorPayload } from '@/modules/shop-variations/lib/variants-service'
 import { getLinksForProduct } from '@/modules/product-addons-for-shop/lib/db/links'
@@ -24,7 +24,10 @@ import type { PadAddonPayload, PadBoxPayload, PadLink } from '@/modules/product-
 
 const MAX_CHAIN_DEPTH = 3
 
-async function buildAddon(link: PadLink, visited: Set<string>, depth: number): Promise<PadAddonPayload | null> {
+// `taxDisplay` is resolved once for the whole box and handed down the chain:
+// every add-on is converted by the same shop settings, and asking for them per
+// add-on was a zone and rate lookup per accessory for the same answer.
+async function buildAddon(link: PadLink, visited: Set<string>, depth: number, taxDisplay: TaxDisplay): Promise<PadAddonPayload | null> {
   if (depth > MAX_CHAIN_DEPTH || visited.has(link.addonProductId)) return null
 
   const [productsById, selector] = await Promise.all([
@@ -49,7 +52,7 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
   // add-on of the other because neither drags the other's list along behind it.
   const childLinks = link.config.hideChildAddons ? [] : await getLinksForProduct(link.addonProductId, true)
   const children = (
-    await Promise.all(childLinks.map((child) => buildAddon(child, nextVisited, depth + 1)))
+    await Promise.all(childLinks.map((child) => buildAddon(child, nextVisited, depth + 1, taxDisplay)))
   ).filter((c): c is PadAddonPayload => c !== null)
 
   const images = await getPrimaryProductImages([link.addonProductId])
@@ -59,7 +62,7 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
   // display and sale price included.
   let plain: PadAddonPayload['plain'] = null
   if (selector.options.length === 0) {
-    const [taxDisplay, shopConfig] = await Promise.all([resolveTaxDisplay(), getShopConfigCached()])
+    const shopConfig = await getShopConfigCached()
     const adjust = makeDisplayAdjuster(taxDisplay, product.taxClassId)
     const price = effectivePrice(product, shopConfig.enabledPriceTypes)
     plain = {
@@ -87,6 +90,7 @@ async function buildAddon(link: PadLink, visited: Set<string>, depth: number): P
     config: link.config,
     selector,
     plain,
+    taxView: productTaxView(taxDisplay, product.taxClassId),
     children,
   }
 }
@@ -105,8 +109,9 @@ export async function buildBoxPayload(productId: string): Promise<PadBoxPayload 
   if (links.length === 0) return null
 
   const visited = new Set<string>([productId])
+  const taxDisplay = await resolveTaxDisplay()
   const [addons, mainOptions, settings, config, mainProducts, staffView] = await Promise.all([
-    Promise.all(links.map((link) => buildAddon(link, visited, 1))),
+    Promise.all(links.map((link) => buildAddon(link, visited, 1, taxDisplay))),
     getOptionsWithValues(productId),
     getPadSettings(),
     getShopConfigCached(),

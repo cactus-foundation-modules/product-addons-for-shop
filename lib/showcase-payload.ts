@@ -4,6 +4,7 @@ import { buildBoxPayload } from '@/modules/product-addons-for-shop/lib/payload'
 import { getPadSettings } from '@/modules/product-addons-for-shop/lib/db/settings'
 import type { ShowcasePayload } from '@/modules/product-addons-for-shop/components/public/AddonsShowcase'
 import type { PadBoxPayload } from '@/modules/product-addons-for-shop/lib/types'
+import { taxViewAmounts } from '@/modules/shop/lib/tax-view-shared'
 
 // The showcase's card data, derived from the same box payload so the two
 // surfaces can never disagree about which add-ons a product offers. From-price
@@ -14,6 +15,12 @@ function fromPrice(addon: PadBoxPayload['addons'][number]): number {
   const enabled = addon.selector.variants.filter((v) => v.enabled)
   if (enabled.length === 0) return addon.selector.basePrice
   return enabled.reduce((min, v) => Math.min(min, v.price), Infinity)
+}
+
+function fromPriceSides(from: number, view: NonNullable<PadBoxPayload['addons'][number]['taxView']>, symbol: string) {
+  const amounts = taxViewAmounts(from, view)
+  const line = (amount: number, note: string) => `From ${symbol}${amount.toFixed(2)}${note ? ` ${note}` : ''}`
+  return { defaultSide: view.defaultSide, ex: line(amounts.ex, view.excludingNote), inc: line(amounts.inc, view.includingNote) }
 }
 
 export async function buildShowcasePayload(productId: string): Promise<(ShowcasePayload & { surface: 'TAB' | 'BLOCK' | 'NONE' }) | null> {
@@ -52,6 +59,10 @@ export async function buildShowcasePayload(productId: string): Promise<(Showcase
         outOfStock: addon.outOfStock,
         ...(addon.config.showWhen?.length ? { showWhen: addon.config.showWhen } : {}),
         fromPriceFormatted: Number.isFinite(from) ? `From ${config.currencySymbol}${from.toFixed(2)}${suffix}` : '',
+        // The same line on both sides of tax, where the shopper's VAT switch is
+        // on - each with its own side's wording. Absent where it is off, and the
+        // card prints `fromPriceFormatted` alone as it always has.
+        ...(Number.isFinite(from) && addon.taxView ? { fromPriceSides: fromPriceSides(from, addon.taxView, config.currencySymbol) } : {}),
       }
     }),
   }

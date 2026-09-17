@@ -66,6 +66,7 @@ import {
 } from '@/modules/product-addons-for-shop/lib/types'
 import { PAD_URL_PARAM, decodePadParams, encodePadParam } from '@/modules/product-addons-for-shop/lib/url-state'
 import { productHref } from '@/modules/shop/lib/product-url'
+import { TaxViewMoney, TaxViewNote } from '@/modules/shop/components/public/TaxViewText'
 import { resizedImageSrc, type ImageResizing } from '@/lib/media/resize-url'
 
 // Per-addon UI state, keyed by linkId (chain rows included - link ids are
@@ -979,7 +980,11 @@ export function AddonsBox({ payload, preview, swatchPreview, resizing, breakpoin
 
   // ---- Rendering -----------------------------------------------------------
   const symbol = payload.currencySymbol
-  const suffix = payload.priceSuffix ? ` ${payload.priceSuffix}` : ''
+  // An add-on's price on the side of tax the page opens on, printed on the other
+  // side as well where the shopper's VAT switch is on, at the add-on's own rate.
+  const figure = (amount: number, addon: PadAddonPayload) => (
+    <TaxViewMoney amount={amount} view={addon.taxView} format={(n) => money(symbol, n)} />
+  )
 
   function setState(linkId: string, patch: Partial<AddonState>) {
     setStates((prev) => ({ ...prev, [linkId]: { ...stateFor(linkId), ...patch } }))
@@ -1205,9 +1210,12 @@ export function AddonsBox({ payload, preview, swatchPreview, resizing, breakpoin
             </span>
           </label>
           <label className="pad-price" htmlFor={checkboxId}>
+            {/* Where the shopper's VAT switch is on, the figure and its wording
+                are printed on both sides of tax and the stylesheet shows one.
+                Where it is off these print the figure and the shop's suffix. */}
             {price != null
-              ? `+${money(symbol, price)}${suffix}`
-              : Number.isFinite(from) ? `from ${money(symbol, from)}${suffix}` : ''}
+              ? <>+{figure(price, addon)}{' '}<TaxViewNote view={addon.taxView} suffix={payload.priceSuffix} /></>
+              : Number.isFinite(from) ? <>from {figure(from, addon)}{' '}<TaxViewNote view={addon.taxView} suffix={payload.priceSuffix} /></> : ''}
           </label>
           <button type="button" className="pad-learn" disabled={preview} onClick={() => setLearnMore(addon)}>
             Learn more

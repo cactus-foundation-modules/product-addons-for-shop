@@ -7,6 +7,7 @@
 
 import type { SvrOptionWithValues, VariantSelectorPayload } from '@/modules/shop-variations/lib/types'
 import type { ProductUrlStyle } from '@/modules/shop/lib/product-url'
+import type { ProductTaxView } from '@/modules/shop/lib/tax-view-shared'
 import { normalizeResponsiveValue, pickResponsive, type Device, type ResponsiveValue } from '@/lib/puck/responsiveValue'
 
 // How one of the add-on product's options gets its value when the add-on is
@@ -212,6 +213,12 @@ export type PadAddonPayload = {
   // only ever say the combination was unavailable. Null whenever the add-on has
   // options, where a variation is what gets bought.
   plain: { childProductId: string; price: number; inStock: boolean; imageUrls: string[] } | null
+  // The shopper's with/without VAT switch at THIS add-on's own rate, or null
+  // where the shop has it off (shop's lib/tax-view-shared.ts). Every figure
+  // above is on the side the page opens on; the box prints both sides through
+  // shop's TaxViewMoney. Optional so a payload serialised before this shipped
+  // still reads, as a price with no switch.
+  taxView?: ProductTaxView | null
   // Whether the add-on has run dry altogether - nothing of it left to sell (see
   // lib/stock.ts). A shopper never sees one of these at all: the server drops it
   // from the payload before it leaves. Staff do, badged and unbuyable, so the
