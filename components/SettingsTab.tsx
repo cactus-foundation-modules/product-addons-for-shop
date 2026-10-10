@@ -12,7 +12,6 @@ type Settings = {
   showcaseSurface: 'TAB' | 'BLOCK' | 'NONE'
 }
 
-const field: React.CSSProperties = { padding: '0.375rem 0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: '0.875rem' }
 
 export function ProductAddonsSettingsTab() {
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -38,27 +37,35 @@ export function ProductAddonsSettingsTab() {
 
   return (
     <form onSubmit={save} className="settings-cols">
-      <div style={{ display: 'grid', gap: '0.25rem' }}>
-        <label style={{ fontSize: '0.8125rem', fontWeight: 600 }}>What add-ons are called (singular)</label>
-        <input style={field} value={settings.nounSingular} maxLength={40}
-          onChange={(e) => setSettings({ ...settings, nounSingular: e.target.value })} />
-        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Used in wording like “Accessory for Impulse Desk”.</span>
+      <div className="card settings-fields">
+        <h3 className="card-title">Wording</h3>
+        <div className="settings-fields">
+          <div className="field">
+            <label htmlFor="pa-noun-singular">What add-ons are called (singular)</label>
+            <input id="pa-noun-singular" value={settings.nounSingular} maxLength={40}
+              onChange={(e) => setSettings({ ...settings, nounSingular: e.target.value })} />
+            <span className="field-hint">Used in wording like &ldquo;Accessory for Impulse Desk&rdquo;.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="pa-noun-plural">And in the plural</label>
+            <input id="pa-noun-plural" value={settings.nounPlural} maxLength={40}
+              onChange={(e) => setSettings({ ...settings, nounPlural: e.target.value })} />
+            <span className="field-hint">The box heading, the product-page tab and prompts like &ldquo;Remove its accessories too?&rdquo;.</span>
+          </div>
+        </div>
       </div>
-      <div style={{ display: 'grid', gap: '0.25rem' }}>
-        <label style={{ fontSize: '0.8125rem', fontWeight: 600 }}>And in the plural</label>
-        <input style={field} value={settings.nounPlural} maxLength={40}
-          onChange={(e) => setSettings({ ...settings, nounPlural: e.target.value })} />
-        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>The box heading, the product-page tab and prompts like “Remove its accessories too?”.</span>
-      </div>
-      <div style={{ display: 'grid', gap: '0.25rem' }}>
-        <label style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Where the showcase appears</label>
-        <select style={field} value={settings.showcaseSurface}
-          onChange={(e) => setSettings({ ...settings, showcaseSurface: e.target.value as Settings['showcaseSurface'] })}>
-          <option value="TAB">A tab on the product page (automatic)</option>
-          <option value="BLOCK">Only where the showcase block is placed</option>
-          <option value="NONE">Nowhere</option>
-        </select>
-        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>The panel of cards with Learn more and Add. The box under Add to basket appears either way.</span>
+      <div className="card settings-fields">
+        <h3 className="card-title">Product page</h3>
+        <div className="field">
+          <label htmlFor="pa-showcase">Where the showcase appears</label>
+          <select id="pa-showcase" value={settings.showcaseSurface}
+            onChange={(e) => setSettings({ ...settings, showcaseSurface: e.target.value as Settings['showcaseSurface'] })}>
+            <option value="TAB">A tab on the product page (automatic)</option>
+            <option value="BLOCK">Only where the showcase block is placed</option>
+            <option value="NONE">Nowhere</option>
+          </select>
+          <span className="field-hint">The panel of cards with Learn more and Add. The box under Add to basket appears either way.</span>
+        </div>
       </div>
       <SettingsHeaderActions>
         <SettingsHeaderStatus message={message === 'Saved.' ? message : null} error={message && message !== 'Saved.' ? message : null} />
