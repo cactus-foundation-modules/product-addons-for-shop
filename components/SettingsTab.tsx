@@ -4,6 +4,7 @@
 // (the noun every heading, caption and prompt uses - "Accessories" on a
 // furniture shop) and where the showcase appears.
 import { useEffect, useState } from 'react'
+import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
 
 type Settings = {
   nounSingular: string
@@ -23,8 +24,8 @@ export function ProductAddonsSettingsTab() {
       .then((d) => setSettings(d?.settings ?? null))
   }, [])
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
+  async function save(e?: React.FormEvent) {
+    e?.preventDefault()
     if (!settings) return
     setMessage(null)
     const res = await fetch('/api/m/product-addons-for-shop/admin/settings', {
@@ -36,7 +37,7 @@ export function ProductAddonsSettingsTab() {
   if (!settings) return <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
 
   return (
-    <form onSubmit={save} style={{ display: 'grid', gap: '1rem', maxWidth: 480 }}>
+    <form onSubmit={save} className="settings-cols">
       <div style={{ display: 'grid', gap: '0.25rem' }}>
         <label style={{ fontSize: '0.8125rem', fontWeight: 600 }}>What add-ons are called (singular)</label>
         <input style={field} value={settings.nounSingular} maxLength={40}
@@ -59,12 +60,12 @@ export function ProductAddonsSettingsTab() {
         </select>
         <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>The panel of cards with Learn more and Add. The box under Add to basket appears either way.</span>
       </div>
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-        <button type="submit" style={{ ...field, background: 'var(--color-primary)', color: 'var(--color-on-primary)', border: 'none', fontWeight: 600, cursor: 'pointer' }}>
-          Save
+      <SettingsHeaderActions>
+        <SettingsHeaderStatus message={message === 'Saved.' ? message : null} error={message && message !== 'Saved.' ? message : null} />
+        <button type="button" className="btn btn-primary" onClick={() => save()}>
+          Save changes
         </button>
-        {message && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{message}</span>}
-      </div>
+      </SettingsHeaderActions>
     </form>
   )
 }
